@@ -1,0 +1,18 @@
+# 邮件工作总结汇总程序依赖包
+# Email Work Summary Tool Dependencies
+
+# 编码检测库 - 用于自动检测邮件文件编码
+chardet>=5.0.0
+
+# 路径处理库 (Python 3.4+ 内置，但为了兼容性列出)
+# pathlib - 已内置于Python 3.4+
+
+# 其他内置库（无需安装）:
+# - email: 邮件解析
+# - datetime: 日期时间处理  
+# - re: 正则表达式
+# - logging: 日志记录
+# - argparse: 命令行参数解析
+# - collections: 数据结构
+# - typing: 类型提示
+

@@ -1,0 +1,5 @@
+output/
+工作总结/
+.idea/
+__pycache__/
+*.pyc
