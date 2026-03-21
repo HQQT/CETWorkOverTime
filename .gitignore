@@ -4,4 +4,4 @@ output/
 __pycache__/
 *.pyc
 .ace-tool/
-.env
+.zplenv

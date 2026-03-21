@@ -137,6 +137,9 @@ class DateUtils:
             是否为有效日期
         """
         now = datetime.now()
+        # 去除时区信息，统一为 naive datetime 比较
+        if date.tzinfo is not None:
+            date = date.replace(tzinfo=None)
         return date <= now
     
     @staticmethod
