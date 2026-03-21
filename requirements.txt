@@ -1,8 +1,13 @@
+--index-url https://mirrors.huaweicloud.com/repository/pypi/simple
+
 # 邮件工作总结汇总程序依赖包
 # Email Work Summary Tool Dependencies
 
 # 编码检测库 - 用于自动检测邮件文件编码
 chardet>=5.0.0
+
+# 环境变量管理 - 从 .env 文件加载邮箱配置
+python-dotenv>=1.0.0
 
 # 路径处理库 (Python 3.4+ 内置，但为了兼容性列出)
 # pathlib - 已内置于Python 3.4+

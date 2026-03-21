@@ -19,6 +19,7 @@ from pathlib import Path
 
 import config
 from email_processor import EmailProcessor
+from email_fetcher import EmailFetcher
 
 
 def setup_logging(log_level: str = "INFO"):
@@ -50,13 +51,16 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
-  python main.py                          # 交互式选择月份（默认）
+  python main.py                          # 默认增量处理所有月份
+  python main.py --fetch                  # 从邮箱获取最近30天的邮件
+  python main.py --fetch --days 7         # 从邮箱获取最近7天的邮件
+  python main.py --fetch-and-process      # 获取邮件并自动处理生成报告
   python main.py --dir ./工作总结           # 指定邮件目录
   python main.py --output ./reports       # 指定输出目录
   python main.py --stats                  # 只显示统计信息
   python main.py --verbose                # 详细日志输出
-  python main.py --months 2024-07,2024-08 # 指定生成特定月份
-  python main.py --months all             # 生成所有月份
+  python main.py --months 2024-07,2024-08 # 指定处理特定月份
+  python main.py -f                       # 强制全量重新处理
         """
     )
 
@@ -89,13 +93,38 @@ def parse_arguments():
     parser.add_argument(
         '--months', '-m',
         type=str,
-        help='指定要生成的月份，格式：2024-07,2024-08 或 all (默认: 交互式选择)'
+        help='指定要处理的月份，格式：2024-07,2024-08 (默认: 处理所有月份)'
+    )
+
+    parser.add_argument(
+        '--fetch',
+        action='store_true',
+        help='仅从邮箱获取邮件，不进行处理'
+    )
+
+    parser.add_argument(
+        '--no-fetch',
+        action='store_true',
+        help='跳过邮件获取，仅处理本地已有邮件'
+    )
+
+    parser.add_argument(
+        '--days',
+        type=int,
+        default=config.IMAP_SEARCH_DAYS,
+        help=f'获取邮件时搜索最近多少天 (默认: {config.IMAP_SEARCH_DAYS})'
     )
 
     parser.add_argument(
         '--version',
         action='version',
-        version='邮件工作总结汇总程序 v1.0'
+        version='邮件工作总结汇总程序 v1.2'
+    )
+
+    parser.add_argument(
+        '--force', '-f',
+        action='store_true',
+        help='强制全量处理，忽略缓存'
     )
 
     return parser.parse_args()
@@ -107,7 +136,7 @@ def print_banner():
 ╔══════════════════════════════════════════════════════════════╗
 ║                    邮件工作总结汇总程序                        ║
 ║                     Email Work Summary Tool                   ║
-║                          Version 1.0                         ║
+║                          Version 1.2                         ║
 ╚══════════════════════════════════════════════════════════════╝
     """
     print(banner)
@@ -236,10 +265,8 @@ def main():
         work_dir = Path(args.dir)
         output_dir = Path(args.output)
 
-        # 验证目录
-        if not work_dir.exists():
-            print(f"❌ 错误: 邮件目录不存在: {work_dir}")
-            sys.exit(1)
+        # 确保邮件目录存在（自动创建）
+        work_dir.mkdir(parents=True, exist_ok=True)
 
         # 创建输出目录
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -248,49 +275,90 @@ def main():
         print(f"📂 邮件目录: {work_dir}")
         print(f"📁 输出目录: {output_dir}")
 
+        # ====== 邮件获取 ======
+        # 默认先获取邮件，除非指定 --no-fetch 或未配置邮箱
+        should_fetch = not args.no_fetch
+        if should_fetch and config.IMAP_USERNAME and config.IMAP_PASSWORD:
+            fetcher = EmailFetcher(save_dir=work_dir)
+            if fetcher.connect():
+                try:
+                    downloaded = fetcher.fetch_emails(days=args.days)
+                    if downloaded > 0:
+                        print(f"\n📥 成功下载 {downloaded} 封新邮件")
+                    else:
+                        print(f"\n📭 没有新邮件需要下载")
+                finally:
+                    fetcher.disconnect()
+
+                # --fetch 仅获取模式，到此结束
+                if args.fetch:
+                    print("\n🎉 邮件获取完成！")
+                    sys.exit(0)
+
+                print("\n" + "─" * 60)
+                print("📝 开始处理邮件并生成报告...")
+            else:
+                if args.fetch:
+                    sys.exit(1)
+                print("\n⚠️ 邮件获取失败，将继续处理本地已有邮件...")
+        elif args.fetch:
+            print("❌ 未配置邮箱账号，无法获取邮件")
+            print("   请在 .env 文件中设置 EMAIL_USERNAME 和 EMAIL_PASSWORD")
+            sys.exit(1)
+
         # 创建邮件处理器
         processor = EmailProcessor(work_dir)
 
-        # 获取统计信息
-        stats = processor.get_statistics()
-        print_statistics(stats)
+        # 确定处理模式（默认增量，--force 切换为全量）
+        incremental = not args.force
+        if args.force:
+            cache_path = output_dir / config.CACHE_FILENAME
+            if cache_path.exists():
+                cache_path.unlink()
+                print("🗑️ 已清除处理缓存，将全量重新处理")
 
-        # 如果只需要统计信息，则退出
-        if args.stats:
-            print("\n✅ 统计信息显示完成")
-            return
+        # --stats 或全量模式：需要完整统计信息
+        if args.stats or not incremental:
+            stats = processor.get_statistics()
+            print_statistics(stats)
 
-        # 确认是否继续处理
-        if stats.get('parsed_emails', 0) == 0:
-            print("\n❌ 没有找到可处理的邮件文件")
-            sys.exit(1)
-
-        # 选择要生成的月份
-        monthly_stats = stats.get('monthly_stats', {})
-        selected_months = []
-
-        if args.months:
-            # 命令行参数指定
-            selected_months = parse_months_argument(args.months, monthly_stats)
-            if not selected_months:
-                print("\n❌ 没有有效的月份选择")
-                sys.exit(1)
-        else:
-            # 默认使用交互式选择
-            selected_months = select_months_interactive(monthly_stats)
-            if not selected_months:
-                print("\n⚠️ 未选择任何月份，程序退出")
+            if args.stats:
+                print("\n✅ 统计信息显示完成")
                 return
 
-        print(f"\n📋 将生成以下月份的报告:")
-        for month in selected_months:
-            count = monthly_stats.get(month, 0)
-            print(f"   📅 {month} ({count} 封邮件)")
+            if stats.get('parsed_emails', 0) == 0:
+                print("\n❌ 没有找到可处理的邮件文件")
+                sys.exit(1)
 
-        print(f"\n🚀 开始处理 {stats.get('parsed_emails', 0)} 封邮件...")
+            monthly_stats = stats.get('monthly_stats', {})
+            if args.months:
+                selected_months = parse_months_argument(args.months, monthly_stats)
+                if not selected_months:
+                    print("\n❌ 没有有效的月份选择")
+                    sys.exit(1)
+            else:
+                selected_months = sorted(monthly_stats.keys())
 
-        # 处理邮件并生成指定月份的报告
-        success = processor.process_emails_for_months(selected_months)
+            print(f"\n📦 模式: 全量处理")
+            print(f"📋 将处理 {len(selected_months)} 个月份的报告")
+            print(f"\n🚀 开始处理 {stats.get('parsed_emails', 0)} 封邮件...")
+        else:
+            # 增量模式：跳过全量统计，直接处理
+            print(f"\n🔄 模式: 增量处理")
+            if args.months:
+                # 需要简单扫描获取可用月份列表来验证
+                stats = processor.get_statistics()
+                monthly_stats = stats.get('monthly_stats', {})
+                selected_months = parse_months_argument(args.months, monthly_stats)
+                if not selected_months:
+                    print("\n❌ 没有有效的月份选择")
+                    sys.exit(1)
+            else:
+                # 默认：处理所有月份，传入 None 让处理器自行决定
+                selected_months = None
+
+        # 处理邮件并生成报告
+        success = processor.process_emails_for_months(selected_months, incremental=incremental)
 
         if success:
             print("\n🎉 程序执行成功！")

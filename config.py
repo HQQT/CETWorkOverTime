@@ -5,6 +5,13 @@
 import os
 from pathlib import Path
 
+# 加载 .env 文件中的环境变量
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / '.env')
+except ImportError:
+    pass  # dotenv 未安装时跳过，直接使用系统环境变量
+
 # 基础配置
 BASE_DIR = Path(__file__).parent
 WORK_SUMMARY_DIR = BASE_DIR / "工作总结"
@@ -32,6 +39,7 @@ FALLBACK_ENCODINGS = ["utf-8", "gbk", "gb18030"]
 
 # 输出配置
 OUTPUT_FORMAT = "markdown"
+CACHE_FILENAME = ".process_cache.json"
 DATE_FORMAT = "%Y年%m月"
 REPORT_FILENAME_FORMAT = "{year}年{month:02d}月工作总结.md"
 
@@ -54,3 +62,13 @@ CONTENT_END_MARKERS = [
 
 # 创建输出目录
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# ============ IMAP 邮箱获取配置 ============
+IMAP_SERVER = os.getenv("IMAP_SERVER", "imap.exmail.qq.com")
+IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
+IMAP_USE_SSL = True
+IMAP_USERNAME = os.getenv("EMAIL_USERNAME", "")
+IMAP_PASSWORD = os.getenv("EMAIL_PASSWORD", "")  # IMAP 授权码
+IMAP_MAILBOX = os.getenv("IMAP_MAILBOX", "&XeVPXGXlX9c-")  # 工作日志 文件夹
+IMAP_SEARCH_SUBJECT = "张蒲龙--工作日志"  # 搜索邮件主题关键词
+IMAP_SEARCH_DAYS = 365  # 默认搜索最近多少天

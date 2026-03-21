@@ -2,9 +2,11 @@
 邮件处理器模块
 """
 
+import json
 import logging
+import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Set
 import sys
 
 import config
@@ -34,7 +36,85 @@ class EmailProcessor:
         if not self.work_dir.exists():
             raise FileNotFoundError(f"工作目录不存在: {self.work_dir}")
         
+        self.cache_path = config.OUTPUT_DIR / config.CACHE_FILENAME
+        
         logger.info(f"邮件处理器初始化完成，工作目录: {self.work_dir}")
+    
+    # ============ 缓存管理 ============
+    
+    def _load_cache(self) -> dict:
+        """
+        加载处理缓存
+        
+        Returns:
+            缓存字典
+        """
+        try:
+            if self.cache_path.exists():
+                with open(self.cache_path, 'r', encoding='utf-8') as f:
+                    cache = json.load(f)
+                logger.info(f"已加载缓存，包含 {len(cache.get('processed_files', {}))} 个文件记录")
+                return cache
+        except Exception as e:
+            logger.warning(f"加载缓存失败，将全量处理: {e}")
+        
+        return {"version": 1, "processed_files": {}}
+    
+    def _save_cache(self, cache: dict):
+        """
+        保存处理缓存
+        
+        Args:
+            cache: 缓存字典
+        """
+        try:
+            config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            with open(self.cache_path, 'w', encoding='utf-8') as f:
+                json.dump(cache, f, ensure_ascii=False, indent=2)
+            logger.info(f"缓存已保存到 {self.cache_path}")
+        except Exception as e:
+            logger.error(f"保存缓存失败: {e}")
+    
+    def _get_changed_files(self, email_files: List[Path], cache: dict) -> tuple:
+        """
+        对比缓存，找出新增/修改/删除的文件
+        
+        Args:
+            email_files: 当前扫描到的邮件文件列表
+            cache: 缓存数据
+            
+        Returns:
+            (changed_files, deleted_filenames, unchanged_filenames)
+        """
+        processed = cache.get('processed_files', {})
+        current_filenames = {f.name for f in email_files}
+        
+        changed_files = []
+        unchanged_filenames = set()
+        
+        for file_path in email_files:
+            fname = file_path.name
+            current_mtime = os.path.getmtime(file_path)
+            
+            if fname in processed:
+                cached_mtime = processed[fname].get('mtime', 0)
+                if abs(current_mtime - cached_mtime) < 1.0:  # 时间精度容差
+                    unchanged_filenames.add(fname)
+                    continue
+            
+            # 新文件或已修改的文件
+            changed_files.append(file_path)
+        
+        # 找出已删除的文件
+        deleted_filenames = set(processed.keys()) - current_filenames
+        
+        logger.info(
+            f"增量检测结果: 新增/修改 {len(changed_files)} 个, "
+            f"未变更 {len(unchanged_filenames)} 个, "
+            f"已删除 {len(deleted_filenames)} 个"
+        )
+        
+        return changed_files, deleted_filenames, unchanged_filenames
     
     def process_all_emails(self) -> bool:
         """
@@ -217,18 +297,19 @@ class EmailProcessor:
         """已弃用"""
         return emails[0]
 
-    def process_emails_for_months(self, selected_months: List[str]) -> bool:
+    def process_emails_for_months(self, selected_months: Optional[List[str]] = None, incremental: bool = False) -> bool:
         """
         处理指定月份的邮件
 
         Args:
-            selected_months: 选择的月份列表，格式如 ['2024-07', '2024-08']
+            selected_months: 选择的月份列表，None 表示所有月份
+            incremental: 是否启用增量模式
 
         Returns:
             处理是否成功
         """
         try:
-            logger.info(f"开始处理指定月份的邮件: {selected_months}")
+            logger.info(f"开始处理指定月份的邮件: {selected_months}, 增量模式: {incremental}")
 
             # 扫描邮件文件
             email_files = self._scan_email_files()
@@ -238,35 +319,162 @@ class EmailProcessor:
 
             logger.info(f"找到 {len(email_files)} 个邮件文件")
 
-            # 解析邮件文件
-            email_data_list = self._parse_email_files(email_files)
-            if not email_data_list:
-                logger.error("没有成功解析任何邮件文件")
-                return False
-
-            logger.info(f"成功解析 {len(email_data_list)} 个邮件文件")
-
-            # 过滤指定月份的邮件
-            filtered_emails = self._filter_emails_by_months(email_data_list, selected_months)
-            if not filtered_emails:
-                logger.warning("指定月份中没有找到邮件")
-                return False
-
-            logger.info(f"过滤后得到 {len(filtered_emails)} 个指定月份的邮件")
-
-            # 生成报告
-            success = self._generate_and_save_reports(filtered_emails)
-
-            if success:
-                logger.info("指定月份邮件处理完成")
-                return True
+            if incremental:
+                return self._process_incremental(email_files, selected_months)
             else:
-                logger.error("报告生成失败")
-                return False
+                return self._process_full(email_files, selected_months)
 
         except Exception as e:
             logger.error(f"处理指定月份邮件时发生错误: {e}")
             return False
+    
+    def _process_full(self, email_files: List[Path], selected_months: List[str]) -> bool:
+        """
+        全量处理邮件
+        """
+        # 解析邮件文件
+        email_data_list = self._parse_email_files(email_files)
+        if not email_data_list:
+            logger.error("没有成功解析任何邮件文件")
+            return False
+
+        logger.info(f"成功解析 {len(email_data_list)} 个邮件文件")
+
+        # 过滤指定月份的邮件
+        filtered_emails = self._filter_emails_by_months(email_data_list, selected_months)
+        if not filtered_emails:
+            logger.warning("指定月份中没有找到邮件")
+            return False
+
+        logger.info(f"过滤后得到 {len(filtered_emails)} 个指定月份的邮件")
+
+        # 生成报告
+        success = self._generate_and_save_reports(filtered_emails)
+
+        if success:
+            # 全量处理后更新缓存
+            self._update_cache_after_processing(email_data_list, email_files)
+            logger.info("全量处理完成")
+            return True
+        else:
+            logger.error("报告生成失败")
+            return False
+    
+    def _process_incremental(self, email_files: List[Path], selected_months: List[str]) -> bool:
+        """
+        增量处理邮件
+        """
+        cache = self._load_cache()
+        
+        # 检测变更
+        changed_files, deleted_filenames, unchanged_filenames = self._get_changed_files(email_files, cache)
+        
+        # 没有任何变化
+        if not changed_files and not deleted_filenames:
+            print("\n✅ 没有检测到变更，无需重新处理")
+            logger.info("增量检测: 无变更，跳过处理")
+            return True
+        
+        # 解析变更的文件，确定受影响的月份
+        affected_months: Set[str] = set()
+        
+        # 处理变更文件
+        changed_email_data = []
+        if changed_files:
+            changed_email_data = self._parse_email_files(changed_files)
+            for ed in changed_email_data:
+                if ed.date:
+                    affected_months.add(ed.date.strftime('%Y-%m'))
+        
+        # 处理已删除的文件（它们之前属于哪些月份）
+        processed = cache.get('processed_files', {})
+        for fname in deleted_filenames:
+            month = processed[fname].get('month', '')
+            if month:
+                affected_months.add(month)
+                logger.info(f"已删除文件 {fname} 影响月份 {month}")
+        
+        # 只保留用户选择的月份（selected_months 为 None 表示所有月份）
+        if selected_months is not None:
+            affected_months = affected_months & set(selected_months)
+        
+        if not affected_months:
+            print("\n✅ 选定月份内没有变更，无需重新处理")
+            # 但仍然需要更新缓存（可能有变更但不在选定月份内）
+            self._update_cache_after_processing(changed_email_data, changed_files, cache)
+            return True
+        
+        print(f"\n🔄 增量处理: 检测到 {len(changed_files)} 个变更文件, {len(deleted_filenames)} 个删除文件")
+        print(f"   受影响月份: {', '.join(sorted(affected_months))}")
+        
+        # 对受影响的月份，重新解析所有相关文件（包括未变更的）
+        # 获取受影响月份对应的所有文件
+        month_files = []
+        for file_path in email_files:
+            date = self.date_utils.extract_date_from_filename(file_path.name)
+            if date and date.strftime('%Y-%m') in affected_months:
+                month_files.append(file_path)
+        
+        logger.info(f"需要重新解析受影响月份的 {len(month_files)} 个文件")
+        
+        # 解析这些文件
+        email_data_list = self._parse_email_files(month_files)
+        if not email_data_list:
+            logger.warning("受影响月份中没有解析到有效邮件")
+            # 可能是该月份的文件全部删除了，仍算成功
+            self._update_cache_after_processing([], email_files, cache)
+            return True
+        
+        # 生成受影响月份的报告
+        filtered_emails = self._filter_emails_by_months(email_data_list, list(affected_months))
+        success = self._generate_and_save_reports(filtered_emails)
+        
+        if success:
+            # 更新缓存
+            self._update_cache_after_processing([], email_files, cache)
+            logger.info(f"增量处理完成，更新了 {len(affected_months)} 个月份的报告")
+            return True
+        else:
+            logger.error("增量报告生成失败")
+            return False
+    
+    def _update_cache_after_processing(self, email_data_list: List[EmailData] = None, 
+                                        email_files: List[Path] = None,
+                                        cache: dict = None):
+        """
+        处理完成后更新缓存
+        
+        Args:
+            email_data_list: 已解析的邮件数据（可选，用于获取月份信息）
+            email_files: 所有当前邮件文件
+            cache: 现有缓存（如果为 None，创建新缓存）
+        """
+        if cache is None:
+            cache = {"version": 1, "processed_files": {}}
+        
+        processed = cache.get('processed_files', {})
+        
+        if email_files:
+            current_filenames = {f.name for f in email_files}
+            
+            # 移除已删除的文件
+            for fname in list(processed.keys()):
+                if fname not in current_filenames:
+                    del processed[fname]
+            
+            # 更新所有当前文件的信息
+            for file_path in email_files:
+                fname = file_path.name
+                mtime = os.path.getmtime(file_path)
+                date = self.date_utils.extract_date_from_filename(fname)
+                month = date.strftime('%Y-%m') if date else ''
+                processed[fname] = {
+                    'mtime': mtime,
+                    'month': month
+                }
+        
+        cache['processed_files'] = processed
+        self._save_cache(cache)
 
     def _filter_emails_by_months(self, email_data_list: List[EmailData], selected_months: List[str]) -> List[EmailData]:
         """

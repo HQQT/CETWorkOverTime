@@ -31,7 +31,7 @@ def extract_year_month(filename):
 monthly_totals = defaultdict(float)
 
 # Read all markdown files in the output directory
-output_dir = r'D:\WorkSpace\Email2Md\output'
+output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
 
 for filename in os.listdir(output_dir):
     if filename.endswith('工作总结.md') and '年' in filename and '月' in filename:

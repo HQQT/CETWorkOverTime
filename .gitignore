@@ -3,3 +3,5 @@ output/
 .idea/
 __pycache__/
 *.pyc
+.ace-tool/
+.env
