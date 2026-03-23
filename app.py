@@ -28,12 +28,16 @@ except ImportError:
 
 # 数据库模块（延迟初始化）
 _db_available = False
+_db_error_code = None
+_db_error_message = ""
+_db_import_error = None
 try:
-    from db import init_db
+    from db import DatabaseDependencyError, init_db
     import email_repository
     _db_available = True
-except ImportError:
-    pass
+except ImportError as exc:
+    DatabaseDependencyError = None
+    _db_import_error = exc
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -58,6 +62,43 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+
+def _set_db_unavailable(reason_code: str, message: str):
+    """记录数据库不可用原因，供日志和 API 统一复用。"""
+    global _db_available, _db_error_code, _db_error_message
+    _db_available = False
+    _db_error_code = reason_code
+    _db_error_message = message
+
+
+def _database_unavailable_payload() -> dict:
+    message = _db_error_message or "数据库不可用"
+    reason_code = _db_error_code or "init_failed"
+    return {
+        "ok": False,
+        "error": message,
+        "reason_code": reason_code,
+    }
+
+
+def _database_unavailable_response():
+    return jsonify(_database_unavailable_payload()), 503
+
+
+def _database_status_unavailable_payload() -> dict:
+    message = _db_error_message or "数据库不可用"
+    reason_code = _db_error_code or "init_failed"
+    return {
+        "ok": True,
+        "db_available": False,
+        "reason_code": reason_code,
+        "message": message,
+    }
+
+
+if _db_import_error is not None:
+    _set_db_unavailable("init_failed", f"数据库模块加载失败: {_db_import_error}")
 
 # 全局任务状态锁 & 状态
 _task_lock = threading.Lock()
@@ -352,7 +393,7 @@ def api_diligence():
 def api_month_diligence(year: int, month: int):
     """获取指定年月的每一天勤奋详情"""
     if not _db_available:
-        return jsonify({"ok": False, "error": "数据库不可用，无法显示每日详情"}), 503
+        return _database_unavailable_response()
 
     try:
         emails = email_repository.get_emails_by_month(year, month)
@@ -700,7 +741,7 @@ def api_fetch_and_process():
 def api_emails():
     """查询指定年月的邮件列表"""
     if not _db_available:
-        return jsonify({"ok": False, "error": "数据库未配置"}), 503
+        return _database_unavailable_response()
 
     year = request.args.get('year', type=int)
     month = request.args.get('month', type=int)
@@ -726,7 +767,7 @@ def api_emails():
 def api_email_detail(date_str):
     """查询单日邮件详情"""
     if not _db_available:
-        return jsonify({"ok": False, "error": "数据库未配置"}), 503
+        return _database_unavailable_response()
 
     try:
         from datetime import date
@@ -748,7 +789,7 @@ def api_email_detail(date_str):
 def api_sync_db():
     """触发历史数据同步入库"""
     if not _db_available:
-        return jsonify({"ok": False, "error": "数据库未配置"}), 503
+        return _database_unavailable_response()
 
     if _task_status["running"]:
         return jsonify({"ok": False, "error": "已有任务在运行中，请稍后重试"}), 409
@@ -775,7 +816,7 @@ def api_sync_db():
 def api_db_status():
     """获取数据库状态"""
     if not _db_available:
-        return jsonify({"ok": True, "db_available": False, "message": "数据库未配置"})
+        return jsonify(_database_status_unavailable_payload())
 
     try:
         years = email_repository.get_all_years()
@@ -802,7 +843,13 @@ def api_db_status():
             "total_records": total
         })
     except Exception as e:
-        return jsonify({"ok": True, "db_available": False, "error": str(e)})
+        return jsonify({
+            "ok": True,
+            "db_available": False,
+            "reason_code": "init_failed",
+            "message": f"数据库初始化失败: {e}",
+            "error": str(e),
+        })
 
 
 # ==================== 错误处理 ====================
@@ -831,13 +878,20 @@ def _ensure_scheduler():
 
 # 首次导入时初始化数据库和调度器
 _ensure_scheduler()
-if _db_available:
+if _db_import_error is not None:
+    logger.warning(f"⚠️ 数据库模块加载失败（服务仍可运行，但数据库功能不可用）: {_db_error_message}")
+elif _db_available:
     try:
         init_db()
+        _db_error_code = None
+        _db_error_message = ""
         logger.info("✅ 数据库初始化成功")
+    except DatabaseDependencyError as e:
+        _set_db_unavailable("missing_driver", str(e))
+        logger.warning(f"⚠️ 数据库驱动缺失（服务仍可运行，但数据库功能不可用）: {e}")
     except Exception as e:
+        _set_db_unavailable("init_failed", f"数据库初始化失败: {e}")
         logger.warning(f"⚠️ 数据库初始化失败（服务仍可运行，但数据库功能不可用）: {e}")
-        _db_available = False
 
 
 if __name__ == "__main__":

@@ -36,6 +36,14 @@ docker compose up -d --build
 
 1. 安装依赖：
 
+使用 `uv`：
+
+```bash
+uv sync
+```
+
+或继续使用 `pip`：
+
 ```bash
 pip install -r requirements.txt -i https://mirrors.huaweicloud.com/repository/pypi/simple
 ```
@@ -51,6 +59,14 @@ psql -U postgres -d postgres -f sql/init.sql
 ```
 
 3. 本地运行 Web 服务：
+
+使用 `uv`：
+
+```bash
+uv run python app.py
+```
+
+或使用当前 Python 环境：
 
 ```bash
 python app.py
@@ -119,7 +135,11 @@ CETWorkOverTime/
    - 检查 `.env` 中的 `DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD`。
    - 如果应用账号没有建库权限，请先手动创建数据库。
 
-3. **抓取到了邮件但正文为空**
+3. **启动时报 `No module named 'psycopg'`**
+   - 如果使用 `uv`，执行 `uv sync`。
+   - 如果使用 `pip`，执行 `pip install -r requirements.txt`。
+
+4. **抓取到了邮件但正文为空**
    - 检查 `config.py` 中的 `CONTENT_START_MARKERS` / `CONTENT_END_MARKERS` 是否覆盖你的日报模板。
 
 ## 📄 许可证

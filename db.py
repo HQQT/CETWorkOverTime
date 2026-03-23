@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 
 EMAILS_TABLE_NAME = "emails"
 META_TABLE_NAME = "email_meta"
+DEPENDENCY_INSTALL_HINT = (
+    "缺少 PostgreSQL 驱动依赖，请执行 `pip install -r requirements.txt` "
+    "或 `uv sync` 安装 `psycopg[binary]` 和 `psycopg-pool`。"
+)
 
 _CREATE_EMAILS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS emails (
@@ -54,10 +58,17 @@ _pool: Optional["ConnectionPool"] = None
 _tables_ready = False
 
 
+class DatabaseDependencyError(ImportError):
+    """数据库驱动依赖缺失。"""
+
+
 def _load_postgres_modules():
-    import psycopg
-    from psycopg.rows import dict_row
-    from psycopg_pool import ConnectionPool
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+    except ModuleNotFoundError as exc:
+        raise DatabaseDependencyError(DEPENDENCY_INSTALL_HINT) from exc
 
     return psycopg, dict_row, ConnectionPool
 
