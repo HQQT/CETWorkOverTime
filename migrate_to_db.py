@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     print("=" * 60)
-    print("📦 Email2Md 历史数据迁移工具")
+    print("📦 CETWorkOverTime 历史数据迁移工具")
     print("=" * 60)
     print(f"📂 邮件目录: {config.WORK_SUMMARY_DIR}")
     print(f"🗄️  目标数据库: {config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}")

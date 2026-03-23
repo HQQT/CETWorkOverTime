@@ -1,5 +1,5 @@
 """
-Email2Md Web 服务
+CETWorkOverTime Web 服务
 基于 Flask 提供 Web API 和前端页面，用于邮件抓取、处理和报告查看。
 """
 
@@ -629,7 +629,7 @@ if _db_available:
 
 if __name__ == "__main__":
     # 本地开发模式
-    print("\n🌐 Email2Md Web 服务启动中...")
+    print("\n🌐 CETWorkOverTime Web 服务启动中...")
     print(f"   访问地址: http://localhost:5000")
     print(f"   自动抓取间隔: {_scheduler_info['interval_hours']} 小时")
     print("   按 Ctrl+C 停止\n")

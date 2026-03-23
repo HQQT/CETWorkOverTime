@@ -1,7 +1,7 @@
 services:
-  email2md:
-    image: email2md:2.0
-    container_name: email2md
+  cetworkovertime:
+    image: cetworkovertime:2.0
+    container_name: cetworkovertime
     ports:
       - "5000:5000"
     volumes:
@@ -22,10 +22,10 @@ services:
 
   mysql:
     image: mysql:8.0
-    container_name: email2md-mysql
+    container_name: cetworkovertime-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-email2md}
-      MYSQL_DATABASE: ${DB_NAME:-email2md}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-cetworkovertime}
+      MYSQL_DATABASE: ${DB_NAME:-cetworkovertime}
       MYSQL_CHARSET: utf8mb4
       MYSQL_COLLATION: utf8mb4_unicode_ci
     ports:
