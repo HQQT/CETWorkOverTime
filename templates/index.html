@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email2Md - 邮件工作总结系统</title>
+    <meta name="description" content="邮件工作总结汇总系统 - 自动抓取邮件并生成 Markdown 月度工作报告">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="navbar">
+        <div class="navbar-brand">
+            <span class="logo-icon">📧</span>
+            <h1>Email2Md</h1>
+            <span class="version-badge">v1.2</span>
+        </div>
+        <div style="display:flex;gap:4px;">
+            <a href="/" style="padding:6px 16px;border-radius:6px;font-size:0.82rem;font-weight:500;color:var(--text-secondary);text-decoration:none;">📊 仪表板</a>
+            <a href="/reports" style="padding:6px 16px;border-radius:6px;font-size:0.82rem;font-weight:500;color:var(--accent-blue);background:rgba(91,141,238,0.1);border:1px solid rgba(91,141,238,0.25);text-decoration:none;">📋 报告管理</a>
+        </div>
+        <div class="navbar-status" id="statusIndicator">
+            <span class="status-dot"></span>
+            <span class="status-text">加载中...</span>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="container">
+        <!-- 统计卡片行 -->
+        <section class="stats-row">
+            <div class="stat-card">
+                <div class="stat-icon">📬</div>
+                <div class="stat-info">
+                    <div class="stat-value" id="emailCount">--</div>
+                    <div class="stat-label">邮件文件</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📄</div>
+                <div class="stat-info">
+                    <div class="stat-value" id="reportCount">--</div>
+                    <div class="stat-label">月度报告</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🔗</div>
+                <div class="stat-info">
+                    <div class="stat-value" id="imapStatus">--</div>
+                    <div class="stat-label">IMAP 连接</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⏰</div>
+                <div class="stat-info">
+                    <div class="stat-value" id="nextRun">--</div>
+                    <div class="stat-label">下次自动抓取</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 操作面板 + 报告列表 -->
+        <div class="content-grid">
+            <!-- 左侧：操作面板 & 报告列表 -->
+            <aside class="sidebar">
+                <!-- 操作面板 -->
+                <div class="panel actions-panel">
+                    <h2 class="panel-title">⚡ 操作</h2>
+                    <div class="action-group">
+                        <button class="btn btn-primary" id="btnFetch" onclick="fetchEmails()">
+                            <span class="btn-icon">📥</span>
+                            抓取邮件
+                        </button>
+                        <div class="action-option">
+                            <label for="fetchDays">最近天数:</label>
+                            <input type="number" id="fetchDays" value="365" min="1" max="3650" class="input-small">
+                        </div>
+                    </div>
+                    <div class="action-group">
+                        <button class="btn btn-secondary" id="btnProcess" onclick="processEmails()">
+                            <span class="btn-icon">⚙️</span>
+                            生成报告
+                        </button>
+                        <div class="action-option">
+                            <label>
+                                <input type="checkbox" id="forceProcess"> 强制全量处理
+                            </label>
+                        </div>
+                    </div>
+                    <div class="action-group">
+                        <button class="btn btn-accent" id="btnFetchAndProcess" onclick="fetchAndProcess()">
+                            <span class="btn-icon">🚀</span>
+                            一键抓取并生成
+                        </button>
+                        <div class="action-hint">与定时任务行为一致，抓取新邮件并更新报告</div>
+                    </div>
+                    <button class="btn btn-outline" onclick="refreshAll()">
+                        <span class="btn-icon">🔄</span>
+                        刷新状态
+                    </button>
+                </div>
+
+                <!-- 报告列表 -->
+                <div class="panel reports-panel">
+                    <h2 class="panel-title">📋 报告列表</h2>
+                    <div class="report-list" id="reportList">
+                        <div class="loading-placeholder">加载中...</div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 右侧：报告详情 -->
+            <section class="main-content">
+                <div class="panel report-viewer" id="reportViewer">
+                    <div class="viewer-header">
+                        <h2 class="panel-title" id="viewerTitle">📝 报告详情</h2>
+                        <div class="viewer-actions">
+                            <button class="btn btn-ghost" id="btnToggleView" onclick="toggleView()" title="切换 Markdown/HTML 视图">
+                                <span>切换视图</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="viewer-body" id="viewerBody">
+                        <div class="empty-state">
+                            <div class="empty-icon">📑</div>
+                            <p>选择左侧报告查看详情</p>
+                            <p class="empty-hint">或点击「抓取邮件」→「生成报告」开始使用</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- 任务日志 -->
+        <section class="panel log-panel" id="logPanel" style="display:none;">
+            <h2 class="panel-title">📜 操作日志</h2>
+            <div class="log-content" id="logContent"></div>
+        </section>
+    </main>
+
+    <!-- Toast 通知 -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // ==================== 全局状态 ====================
+        let currentReport = null;
+        let showingHtml = true;
+        let currentReportData = null;
+        let statusPollTimer = null;
+
+        // ==================== 初始化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshAll();
+        });
+
+        function refreshAll() {
+            loadStatus();
+            loadReports();
+        }
+
+        // ==================== API 调用 ====================
+        async function apiCall(url, options = {}) {
+            try {
+                const resp = await fetch(url, options);
+                const data = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(data.error || `HTTP ${resp.status}`);
+                }
+                return data;
+            } catch (err) {
+                showToast(err.message, 'error');
+                throw err;
+            }
+        }
+
+        // ==================== 状态 ====================
+        async function loadStatus() {
+            try {
+                const data = await apiCall('/api/status');
+                const stats = data.stats;
+                const task = data.task;
+
+                document.getElementById('emailCount').textContent = stats.email_count;
+                document.getElementById('reportCount').textContent = stats.report_count;
+                document.getElementById('imapStatus').textContent = stats.imap_configured ? '已配置' : '未配置';
+                document.getElementById('imapStatus').classList.toggle('text-danger', !stats.imap_configured);
+
+                // 调度器信息
+                const scheduler = data.scheduler;
+                if (scheduler && scheduler.next_run) {
+                    // 只显示时间部分
+                    const nextTime = scheduler.next_run.split(' ')[1] || scheduler.next_run;
+                    document.getElementById('nextRun').textContent = nextTime;
+                } else {
+                    document.getElementById('nextRun').textContent = '已关闭';
+                }
+
+                // 任务状态
+                const statusIndicator = document.getElementById('statusIndicator');
+                if (task.running) {
+                    statusIndicator.classList.add('busy');
+                    statusIndicator.querySelector('.status-text').textContent = task.message || '任务运行中';
+                    disableButtons(true);
+                    startPolling();
+                } else {
+                    statusIndicator.classList.remove('busy');
+                    statusIndicator.querySelector('.status-text').textContent = '就绪';
+                    disableButtons(false);
+                    stopPolling();
+                    if (task.message && task.finished_at) {
+                        statusIndicator.querySelector('.status-text').textContent = task.message;
+                    }
+                }
+            } catch (e) {
+                document.getElementById('statusIndicator').querySelector('.status-text').textContent = '连接失败';
+            }
+        }
+
+        function startPolling() {
+            if (statusPollTimer) return;
+            statusPollTimer = setInterval(() => {
+                loadStatus();
+            }, 2000);
+        }
+
+        function stopPolling() {
+            if (statusPollTimer) {
+                clearInterval(statusPollTimer);
+                statusPollTimer = null;
+                // 任务结束后刷新报告列表
+                loadReports();
+            }
+        }
+
+        function disableButtons(disabled) {
+            document.getElementById('btnFetch').disabled = disabled;
+            document.getElementById('btnProcess').disabled = disabled;
+            document.getElementById('btnFetchAndProcess').disabled = disabled;
+        }
+
+        // ==================== 报告列表 ====================
+        async function loadReports() {
+            try {
+                const data = await apiCall('/api/reports');
+                const list = document.getElementById('reportList');
+
+                if (data.reports.length === 0) {
+                    list.innerHTML = '<div class="empty-list">暂无报告<br><small>请先抓取邮件并生成报告</small></div>';
+                    return;
+                }
+
+                list.innerHTML = data.reports.map(r => `
+                    <div class="report-item ${currentReport === r.filename ? 'active' : ''}"
+                         onclick="viewReport('${r.filename}')">
+                        <div class="report-item-icon">${r.filename.includes('汇总') ? '📊' : '📄'}</div>
+                        <div class="report-item-info">
+                            <div class="report-item-name">${r.filename.replace('.md', '')}</div>
+                            <div class="report-item-meta">${r.modified} · ${formatSize(r.size)}</div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                document.getElementById('reportList').innerHTML = '<div class="empty-list">加载失败</div>';
+            }
+        }
+
+        // ==================== 查看报告 ====================
+        async function viewReport(filename) {
+            currentReport = filename;
+            loadReports(); // 刷新高亮
+
+            const viewer = document.getElementById('viewerBody');
+            viewer.innerHTML = '<div class="loading-placeholder">加载中...</div>';
+            document.getElementById('viewerTitle').textContent = `📝 ${filename.replace('.md', '')}`;
+
+            try {
+                const data = await apiCall(`/api/report/${encodeURIComponent(filename)}?html=1`);
+                currentReportData = data;
+                showingHtml = true;
+                renderReport();
+            } catch (e) {
+                viewer.innerHTML = '<div class="error-state">加载报告失败</div>';
+            }
+        }
+
+        function renderReport() {
+            const viewer = document.getElementById('viewerBody');
+            if (!currentReportData) return;
+
+            if (showingHtml && currentReportData.html) {
+                viewer.innerHTML = `<div class="markdown-body">${currentReportData.html}</div>`;
+            } else {
+                viewer.innerHTML = `<pre class="markdown-raw"><code>${escapeHtml(currentReportData.markdown)}</code></pre>`;
+            }
+
+            document.getElementById('btnToggleView').querySelector('span').textContent =
+                showingHtml ? '查看源码' : '渲染视图';
+        }
+
+        function toggleView() {
+            showingHtml = !showingHtml;
+            renderReport();
+        }
+
+        // ==================== 邮件抓取 ====================
+        async function fetchEmails() {
+            const days = parseInt(document.getElementById('fetchDays').value) || 365;
+
+            try {
+                const data = await apiCall('/api/fetch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ days })
+                });
+                showToast(data.message, 'success');
+                appendLog(`📥 开始抓取最近 ${days} 天的邮件...`);
+                startPolling();
+                loadStatus();
+            } catch (e) {
+                // error already shown by apiCall
+            }
+        }
+
+        // ==================== 生成报告 ====================
+        async function processEmails() {
+            const force = document.getElementById('forceProcess').checked;
+
+            try {
+                const data = await apiCall('/api/process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ force })
+                });
+                showToast(data.message, 'success');
+                appendLog(`⚙️ 开始生成报告... ${force ? '(全量模式)' : '(增量模式)'}`);
+                startPolling();
+                loadStatus();
+            } catch (e) {
+                // error already shown by apiCall
+            }
+        }
+
+        // ==================== 一键抓取并生成 ====================
+        async function fetchAndProcess() {
+            const days = parseInt(document.getElementById('fetchDays').value) || 365;
+
+            try {
+                const data = await apiCall('/api/fetch-and-process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ days })
+                });
+                showToast(data.message, 'success');
+                appendLog(`🚀 一键抓取并生成报告（最近 ${days} 天）...`);
+                startPolling();
+                loadStatus();
+            } catch (e) {
+                // error already shown by apiCall
+            }
+        }
+
+        // ==================== 工具函数 ====================
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <span class="toast-icon">${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}</span>
+                <span class="toast-message">${message}</span>
+            `;
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => toast.classList.add('show'));
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function appendLog(message) {
+            const panel = document.getElementById('logPanel');
+            const content = document.getElementById('logContent');
+            panel.style.display = 'block';
+
+            const time = new Date().toLocaleTimeString('zh-CN');
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
+            content.appendChild(line);
+            content.scrollTop = content.scrollHeight;
+        }
+    </script>
+</body>
+</html>

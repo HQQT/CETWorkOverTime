@@ -1,0 +1,11 @@
+.git
+.gitignore
+.idea
+.ace-tool
+.env
+__pycache__
+*.pyc
+*.pyo
+*.log
+README.md
+.dockerignore

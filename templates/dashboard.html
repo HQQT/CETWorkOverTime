@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email2Md - 勤奋时间仪表板</title>
+    <meta name="description" content="邮件工作总结 - 勤奋时间统计仪表板">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* ---- 仪表板专属样式 ---- */
+        .dashboard-hero {
+            text-align: center;
+            padding: 32px 0 24px;
+        }
+        .dashboard-hero h2 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 6px;
+        }
+        .dashboard-hero p {
+            color: var(--text-muted);
+            font-size: 0.88rem;
+        }
+
+        /* 年度区块 */
+        .year-section {
+            margin-bottom: 32px;
+        }
+        .year-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .year-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .year-summary {
+            display: flex;
+            gap: 20px;
+            font-size: 0.85rem;
+        }
+        .year-summary .label {
+            color: var(--text-muted);
+        }
+        .year-summary .value {
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* 月度网格 */
+        .months-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        /* 月度卡片 */
+        .month-card {
+            position: relative;
+            padding: 18px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            transition: all var(--transition-normal);
+            overflow: hidden;
+            cursor: default;
+        }
+        .month-card:hover {
+            border-color: var(--border-accent);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+        .month-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            border-radius: 3px 3px 0 0;
+        }
+        .month-card.positive::before {
+            background: linear-gradient(90deg, #4cca8d, #36b37e);
+        }
+        .month-card.negative::before {
+            background: linear-gradient(90deg, #e85b5b, #d94444);
+        }
+        .month-card.zero::before {
+            background: linear-gradient(90deg, #5b8dee, #4a7de0);
+        }
+
+        .month-name {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .month-hours {
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        .month-hours span {
+            font-size: 0.75rem;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+        .month-delta {
+            font-size: 0.92rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .month-delta.positive {
+            color: var(--accent-green);
+        }
+        .month-delta.negative {
+            color: var(--accent-red);
+        }
+        .month-delta.zero {
+            color: var(--accent-blue);
+        }
+        .month-entries {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        /* 进度条 */
+        .month-bar {
+            margin-top: 10px;
+            height: 6px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .month-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .month-bar-fill.positive {
+            background: linear-gradient(90deg, #4cca8d, #36b37e);
+        }
+        .month-bar-fill.negative {
+            background: linear-gradient(90deg, #e85b5b, #d94444);
+        }
+        .month-bar-fill.zero {
+            background: linear-gradient(90deg, #5b8dee, #4a7de0);
+        }
+
+        /* 导航标签 */
+        .nav-tabs {
+            display: flex;
+            gap: 4px;
+        }
+        .nav-tab {
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: all var(--transition-fast);
+            border: 1px solid transparent;
+        }
+        .nav-tab:hover {
+            color: var(--text-primary);
+            background: rgba(255,255,255,0.03);
+        }
+        .nav-tab.active {
+            color: var(--accent-blue);
+            background: rgba(91,141,238,0.1);
+            border-color: rgba(91,141,238,0.25);
+        }
+
+        /* 年度汇总卡片 */
+        .year-totals {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .total-card {
+            padding: 14px 16px;
+            background: var(--gradient-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            text-align: center;
+        }
+        .total-card .tc-value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+        .total-card .tc-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .loading-dashboard {
+            text-align: center;
+            padding: 80px 20px;
+            color: var(--text-muted);
+        }
+        .loading-dashboard .spinner {
+            font-size: 2rem;
+            animation: pulse 1.5s infinite;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="navbar">
+        <div class="navbar-brand">
+            <span class="logo-icon">📧</span>
+            <h1>Email2Md</h1>
+            <span class="version-badge">v1.2</span>
+        </div>
+        <div class="nav-tabs">
+            <a href="/" class="nav-tab active">📊 仪表板</a>
+            <a href="/reports" class="nav-tab">📋 报告管理</a>
+        </div>
+        <div class="navbar-status" id="statusIndicator">
+            <span class="status-dot"></span>
+            <span class="status-text">加载中...</span>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="dashboard-hero">
+            <h2>⏰ 勤奋时间仪表板</h2>
+            <p>每月目标 <strong id="targetHours">36</strong> 小时 · 自动从工作日志邮件统计</p>
+        </div>
+
+        <div id="dashboardContent">
+            <div class="loading-dashboard">
+                <div class="spinner">⏳</div>
+                <p>正在加载数据...</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const MONTH_NAMES = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDiligenceData();
+            loadStatus();
+        });
+
+        async function loadStatus() {
+            try {
+                const resp = await fetch('/api/status');
+                const data = await resp.json();
+                const indicator = document.getElementById('statusIndicator');
+                if (data.task && data.task.running) {
+                    indicator.classList.add('busy');
+                    indicator.querySelector('.status-text').textContent = data.task.message || '任务运行中';
+                } else {
+                    indicator.classList.remove('busy');
+                    indicator.querySelector('.status-text').textContent = '就绪';
+                }
+            } catch(e) {
+                document.getElementById('statusIndicator').querySelector('.status-text').textContent = '连接失败';
+            }
+        }
+
+        async function loadDiligenceData() {
+            try {
+                const resp = await fetch('/api/diligence');
+                const data = await resp.json();
+
+                if (!data.ok) {
+                    document.getElementById('dashboardContent').innerHTML = '<div class="loading-dashboard"><p>加载失败</p></div>';
+                    return;
+                }
+
+                document.getElementById('targetHours').textContent = data.target_hours;
+                renderDashboard(data);
+            } catch(e) {
+                document.getElementById('dashboardContent').innerHTML = '<div class="loading-dashboard"><p>加载失败: ' + e.message + '</p></div>';
+            }
+        }
+
+        function renderDashboard(data) {
+            const container = document.getElementById('dashboardContent');
+            const years = data.years;
+            const yearKeys = Object.keys(years).sort().reverse(); // 最新年份在前
+
+            if (yearKeys.length === 0) {
+                container.innerHTML = `
+                    <div class="loading-dashboard">
+                        <div class="spinner">📭</div>
+                        <p>暂无勤奋时间数据</p>
+                        <p style="font-size:0.82rem; margin-top: 8px;">请先前往 <a href="/reports" style="color:var(--accent-blue)">报告管理</a> 抓取邮件并生成报告</p>
+                    </div>`;
+                return;
+            }
+
+            let html = '';
+
+            for (const yearKey of yearKeys) {
+                const yd = years[yearKey];
+                const monthCount = yd.months.length;
+                const totalTarget = yd.total_target;
+                const deltaClass = yd.total_delta > 0 ? 'positive' : yd.total_delta < 0 ? 'negative' : 'zero';
+                const deltaSign = yd.total_delta > 0 ? '+' : '';
+
+                html += `
+                <section class="year-section">
+                    <div class="year-header">
+                        <div class="year-title">📅 ${yearKey} 年</div>
+                        <div class="year-summary">
+                            <div><span class="label">月份数 </span><span class="value">${monthCount}</span></div>
+                            <div><span class="label">累计 </span><span class="value">${yd.total_hours.toFixed(1)}h</span></div>
+                            <div><span class="label">目标 </span><span class="value">${totalTarget.toFixed(0)}h</span></div>
+                            <div><span class="label">差值 </span><span class="value ${deltaClass}">${deltaSign}${yd.total_delta.toFixed(1)}h</span></div>
+                        </div>
+                    </div>
+
+                    <div class="year-totals">
+                        <div class="total-card">
+                            <div class="tc-value">${yd.total_hours.toFixed(1)}<span style="font-size:0.7em;color:var(--text-muted)">h</span></div>
+                            <div class="tc-label">累计勤奋时间</div>
+                        </div>
+                        <div class="total-card">
+                            <div class="tc-value">${totalTarget.toFixed(0)}<span style="font-size:0.7em;color:var(--text-muted)">h</span></div>
+                            <div class="tc-label">累计目标时间</div>
+                        </div>
+                        <div class="total-card">
+                            <div class="tc-value ${deltaClass}">${deltaSign}${yd.total_delta.toFixed(1)}<span style="font-size:0.7em;color:var(--text-muted)">h</span></div>
+                            <div class="tc-label">总差值</div>
+                        </div>
+                    </div>
+
+                    <div class="months-grid">`;
+
+                for (const m of yd.months) {
+                    const mName = MONTH_NAMES[m.month - 1];
+                    const dClass = m.delta > 0 ? 'positive' : m.delta < 0 ? 'negative' : 'zero';
+                    const dSign = m.delta > 0 ? '+' : '';
+                    const pct = Math.min((m.hours / m.target) * 100, 150);
+
+                    html += `
+                        <div class="month-card ${dClass}">
+                            <div class="month-name">${mName}</div>
+                            <div class="month-hours">${m.hours.toFixed(1)} <span>/ ${m.target}h</span></div>
+                            <div class="month-delta ${dClass}">${dSign}${m.delta.toFixed(1)}h</div>
+                            <div class="month-bar">
+                                <div class="month-bar-fill ${dClass}" style="width: ${pct}%"></div>
+                            </div>
+                            <div class="month-entries">${m.entries} 条记录</div>
+                        </div>`;
+                }
+
+                html += `
+                    </div>
+                </section>`;
+            }
+
+            container.innerHTML = html;
+
+            // 动画：延迟触发进度条
+            requestAnimationFrame(() => {
+                document.querySelectorAll('.month-bar-fill').forEach(el => {
+                    el.style.width = el.style.width; // 触发重绘
+                });
+            });
+        }
+    </script>
+</body>
+</html>
