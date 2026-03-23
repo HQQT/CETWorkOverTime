@@ -73,3 +73,11 @@ IMAP_PASSWORD = os.getenv("EMAIL_PASSWORD", "")  # IMAP 授权码
 IMAP_MAILBOX = os.getenv("IMAP_MAILBOX", "&XeVPXGXlX9c-")  # 工作日志 文件夹
 IMAP_SEARCH_SUBJECT = os.getenv("IMAP_SEARCH_SUBJECT", "--工作日志")  # 搜索邮件主题关键词
 IMAP_SEARCH_DAYS = 365  # 默认搜索最近多少天
+
+# ============ MySQL 数据库配置 ============
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", "3306"))
+DB_USER = os.getenv("DB_USER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_NAME = os.getenv("DB_NAME", "email2md")
+DB_CHARSET = "utf8mb4"

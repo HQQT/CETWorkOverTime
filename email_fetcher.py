@@ -104,7 +104,20 @@ class EmailFetcher:
             logger.info("IMAP 连接已断开")
 
     def _load_fetch_cache(self) -> dict:
-        """加载获取缓存"""
+        """加载获取缓存（优先从数据库，回退到 JSON 文件）"""
+        # 尝试从数据库读取
+        try:
+            import email_repository
+            import json as _json
+            cache_value = email_repository.get_meta('fetch_cache')
+            if cache_value:
+                cache = _json.loads(cache_value)
+                logger.debug(f"从数据库加载获取缓存: last_uid={cache.get('last_uid')}")
+                return cache
+        except Exception as e:
+            logger.debug(f"数据库缓存读取失败，回退到文件: {e}")
+
+        # 回退到 JSON 文件
         try:
             if self.fetch_cache_path.exists():
                 with open(self.fetch_cache_path, 'r', encoding='utf-8') as f:
@@ -114,19 +127,29 @@ class EmailFetcher:
         return {}
 
     def _save_fetch_cache(self, uidvalidity: str, max_uid: int):
-        """保存 UIDVALIDITY 和最大 UID"""
+        """保存 UIDVALIDITY 和最大 UID（同时写数据库和 JSON 文件）"""
+        cache = {
+            'uidvalidity': uidvalidity,
+            'last_uid': max_uid,
+            'last_fetch_date': datetime.now().strftime('%Y-%m-%d')
+        }
+
+        # 写入数据库
         try:
-            cache = {
-                'uidvalidity': uidvalidity,
-                'last_uid': max_uid,
-                'last_fetch_date': datetime.now().strftime('%Y-%m-%d')
-            }
+            import email_repository
+            import json as _json
+            email_repository.save_meta('fetch_cache', _json.dumps(cache))
+            logger.info(f"获取缓存已保存到数据库: last_uid={max_uid}")
+        except Exception as e:
+            logger.debug(f"保存缓存到数据库失败: {e}")
+
+        # 同时写 JSON 文件（兼容旧流程）
+        try:
             config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             with open(self.fetch_cache_path, 'w', encoding='utf-8') as f:
                 json.dump(cache, f)
-            logger.info(f"获取缓存已保存: last_uid={max_uid}")
         except Exception as e:
-            logger.debug(f"保存获取缓存失败: {e}")
+            logger.debug(f"保存获取缓存到文件失败: {e}")
 
     def fetch_emails(self, days: int = 365) -> int:
         """

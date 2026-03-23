@@ -16,6 +16,16 @@ from date_utils import DateUtils
 
 logger = logging.getLogger(__name__)
 
+# 延迟导入数据库模块（仅在数据库可用时使用）
+def _get_repository():
+    """获取 email_repository 模块（延迟导入避免数据库未配置时报错）"""
+    try:
+        import email_repository
+        return email_repository
+    except Exception as e:
+        logger.debug(f"数据库模块不可用: {e}")
+        return None
+
 
 class EmailProcessor:
     """邮件处理器主类"""
@@ -340,6 +350,9 @@ class EmailProcessor:
 
         logger.info(f"成功解析 {len(email_data_list)} 个邮件文件")
 
+        # ====== 入库到 MySQL ======
+        self._save_to_database(email_data_list)
+
         # 过滤指定月份的邮件
         filtered_emails = self._filter_emails_by_months(email_data_list, selected_months)
         if not filtered_emails:
@@ -424,7 +437,10 @@ class EmailProcessor:
             # 可能是该月份的文件全部删除了，仍算成功
             self._update_cache_after_processing([], email_files, cache)
             return True
-        
+
+        # ====== 入库到 MySQL ======
+        self._save_to_database(email_data_list)
+
         # 生成受影响月份的报告
         filtered_emails = self._filter_emails_by_months(email_data_list, list(affected_months))
         success = self._generate_and_save_reports(filtered_emails)
@@ -598,3 +614,49 @@ class EmailProcessor:
         except Exception as e:
             logger.error(f"获取统计信息时发生错误: {e}")
             return {}
+
+    # ============ 数据库集成 ============
+
+    def _save_to_database(self, email_data_list: List[EmailData]):
+        """
+        将解析后的邮件数据批量保存到 MySQL
+
+        如果数据库模块不可用则静默跳过。
+        """
+        repo = _get_repository()
+        if repo is None:
+            return
+
+        try:
+            stats = repo.bulk_save_emails(email_data_list)
+            saved = stats.get('saved', 0)
+            skipped = stats.get('skipped', 0)
+            failed = stats.get('failed', 0)
+            if saved > 0 or failed > 0:
+                print(f"\n💾 数据库入库: 新增 {saved}, 跳过 {skipped}, 失败 {failed}")
+            logger.info(f"数据库入库完成: {stats}")
+        except Exception as e:
+            logger.error(f"数据库入库失败（不影响报告生成）: {e}")
+            print(f"\n⚠️ 数据库入库失败（不影响报告生成）: {e}")
+
+    def sync_to_db(self) -> dict:
+        """
+        一次性将所有本地 .eml 文件入库（历史数据迁移）
+
+        Returns:
+            {'saved': int, 'skipped': int, 'failed': int}
+        """
+        repo = _get_repository()
+        if repo is None:
+            raise RuntimeError("数据库模块不可用，请检查 MySQL 配置")
+
+        logger.info("开始历史数据同步到数据库")
+        email_files = self._scan_email_files()
+        if not email_files:
+            logger.warning("未找到任何邮件文件")
+            return {'saved': 0, 'skipped': 0, 'failed': 0}
+
+        email_data_list = self._parse_email_files(email_files)
+        stats = repo.bulk_save_emails(email_data_list)
+        logger.info(f"历史数据同步完成: {stats}")
+        return stats
