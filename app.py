@@ -563,6 +563,7 @@ def api_fetch():
 
     data = request.get_json(silent=True) or {}
     days = data.get("days", config.IMAP_SEARCH_DAYS)
+    force = data.get("force", False)
 
     if not config.IMAP_USERNAME or not config.IMAP_PASSWORD:
         return jsonify({"ok": False, "error": "未配置邮箱账号，请设置环境变量 EMAIL_USERNAME 和 EMAIL_PASSWORD"}), 400
@@ -575,8 +576,9 @@ def api_fetch():
                 downloaded = 0
                 if fetcher.connect():
                     try:
-                        _update_status(True, "fetch", f"正在抓取最近 {days} 天的邮件...")
-                        downloaded = fetcher.fetch_emails(days=days)
+                        action_text = "正在强制全量重抓全部邮件..." if force else f"正在抓取最近 {days} 天的邮件..."
+                        _update_status(True, "fetch", action_text)
+                        downloaded = fetcher.fetch_emails(days=days, force=force)
                     finally:
                         fetcher.disconnect()
                 else:
@@ -593,7 +595,8 @@ def api_fetch():
     thread = threading.Thread(target=_do_fetch, daemon=True)
     thread.start()
 
-    return jsonify({"ok": True, "message": "邮件抓取任务已启动"})
+    message = "邮件全量重抓任务已启动" if force else "邮件抓取任务已启动"
+    return jsonify({"ok": True, "message": message})
 
 
 @app.route("/api/process", methods=["POST"])
@@ -657,6 +660,7 @@ def api_fetch_and_process():
 
     data = request.get_json(silent=True) or {}
     days = data.get("days", config.IMAP_SEARCH_DAYS)
+    force = data.get("force", False)
 
     def _do_all():
         with _task_lock:
@@ -667,8 +671,9 @@ def api_fetch_and_process():
                 downloaded = 0
                 if fetcher.connect():
                     try:
-                        _update_status(True, "fetch-and-process", f"正在抓取最近 {days} 天的邮件...")
-                        downloaded = fetcher.fetch_emails(days=days)
+                        action_text = "正在强制全量重抓全部邮件..." if force else f"正在抓取最近 {days} 天的邮件..."
+                        _update_status(True, "fetch-and-process", action_text)
+                        downloaded = fetcher.fetch_emails(days=days, force=force)
                     finally:
                         fetcher.disconnect()
                 else:
@@ -685,7 +690,8 @@ def api_fetch_and_process():
     thread = threading.Thread(target=_do_all, daemon=True)
     thread.start()
 
-    return jsonify({"ok": True, "message": "一键抓取并入库任务已启动"})
+    message = "全量重抓并入库任务已启动" if force else "一键抓取并入库任务已启动"
+    return jsonify({"ok": True, "message": message})
 
 
 # ==================== 数据库查询 API ====================

@@ -79,6 +79,11 @@
                             <label for="fetchDays">最近天数:</label>
                             <input type="number" id="fetchDays" value="365" min="1" max="3650" class="input-small">
                         </div>
+                        <div class="action-option">
+                            <label>
+                                <input type="checkbox" id="forceFetch"> 强制全量重抓
+                            </label>
+                        </div>
                     </div>
                     <div class="action-group">
                         <button class="btn btn-secondary" id="btnProcess" onclick="processEmails()">
@@ -318,15 +323,16 @@
         // ==================== 邮件抓取 ====================
         async function fetchEmails() {
             const days = parseInt(document.getElementById('fetchDays').value) || 365;
+            const force = document.getElementById('forceFetch').checked;
 
             try {
                 const data = await apiCall('/api/fetch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ days })
+                    body: JSON.stringify({ days, force })
                 });
                 showToast(data.message, 'success');
-                appendLog(`📥 开始抓取最近 ${days} 天的邮件...`);
+                appendLog(force ? '📥 开始强制全量重抓全部邮件...' : `📥 开始抓取最近 ${days} 天的邮件...`);
                 startPolling();
                 loadStatus();
             } catch (e) {
@@ -356,15 +362,16 @@
         // ==================== 一键抓取并生成 ====================
         async function fetchAndProcess() {
             const days = parseInt(document.getElementById('fetchDays').value) || 365;
+            const force = document.getElementById('forceFetch').checked;
 
             try {
                 const data = await apiCall('/api/fetch-and-process', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ days })
+                    body: JSON.stringify({ days, force })
                 });
                 showToast(data.message, 'success');
-                appendLog(`🚀 一键抓取并生成报告（最近 ${days} 天）...`);
+                appendLog(force ? '🚀 一键强制全量重抓并同步...' : `🚀 一键抓取并生成报告（最近 ${days} 天）...`);
                 startPolling();
                 loadStatus();
             } catch (e) {

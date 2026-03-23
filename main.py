@@ -124,7 +124,7 @@ def parse_arguments():
     parser.add_argument(
         '--force', '-f',
         action='store_true',
-        help='强制全量处理，忽略缓存'
+        help='强制全量重抓/处理，忽略抓取与处理缓存'
     )
 
     return parser.parse_args()
@@ -282,7 +282,7 @@ def main():
             fetcher = EmailFetcher(save_dir=work_dir)
             if fetcher.connect():
                 try:
-                    downloaded = fetcher.fetch_emails(days=args.days)
+                    downloaded = fetcher.fetch_emails(days=args.days, force=args.force)
                     if downloaded > 0:
                         print(f"\n📥 成功下载 {downloaded} 封新邮件")
                     else:

@@ -151,7 +151,23 @@ class EmailFetcher:
         except Exception as e:
             logger.debug(f"保存获取缓存到文件失败: {e}")
 
-    def fetch_emails(self, days: int = 365) -> int:
+    def clear_fetch_cache(self):
+        """清理抓取缓存（数据库 + 本地 JSON）。"""
+        try:
+            import email_repository
+            email_repository.delete_meta('fetch_cache')
+            logger.info("已清理数据库中的抓取缓存")
+        except Exception as e:
+            logger.debug(f"清理数据库抓取缓存失败: {e}")
+
+        try:
+            if self.fetch_cache_path.exists():
+                self.fetch_cache_path.unlink()
+                logger.info(f"已删除抓取缓存文件: {self.fetch_cache_path}")
+        except Exception as e:
+            logger.debug(f"删除抓取缓存文件失败: {e}")
+
+    def fetch_emails(self, days: int = 365, force: bool = False) -> int:
         """
         搜索并下载邮件（UID 增量）
 
@@ -159,6 +175,7 @@ class EmailFetcher:
 
         Args:
             days: 首次搜索最近多少天（仅首次生效）
+            force: 是否忽略抓取缓存并强制全量重抓
 
         Returns:
             新下载的邮件数量
@@ -182,11 +199,18 @@ class EmailFetcher:
             uidvalidity = uidval_data[0].decode() if uidval_data and uidval_data[0] else ''
 
             # 加载缓存，判断是否增量模式
-            cache = self._load_fetch_cache()
-            is_incremental = (
-                cache.get('last_uid') and
-                cache.get('uidvalidity') == uidvalidity
-            )
+            cache = {}
+            is_incremental = False
+            if force:
+                self.clear_fetch_cache()
+                logger.info("强制全量模式: 忽略抓取缓存并重新扫描全部邮件")
+                print("🔄 强制全量模式，重新扫描全部邮件...")
+            else:
+                cache = self._load_fetch_cache()
+                is_incremental = (
+                    cache.get('last_uid') and
+                    cache.get('uidvalidity') == uidvalidity
+                )
 
             if is_incremental:
                 last_uid = cache['last_uid']
@@ -213,10 +237,11 @@ class EmailFetcher:
                 print(f"   📬 发现 {len(new_uids)} 封新邮件")
             else:
                 # 首次运行：搜索全部邮件
-                if cache.get('uidvalidity') and cache.get('uidvalidity') != uidvalidity:
+                if not force and cache.get('uidvalidity') and cache.get('uidvalidity') != uidvalidity:
                     print("⚠️ 邮箱文件夹 UIDVALIDITY 已变更，重新全量搜索")
 
-                print(f"🔍 首次运行，搜索全部邮件...")
+                if not force:
+                    print(f"🔍 首次运行，搜索全部邮件...")
                 status, data = self.connection.uid('search', None, 'ALL')
                 if status != 'OK':
                     return 0
@@ -490,13 +515,39 @@ class EmailFetcher:
             result = []
             for part, charset in decoded_parts:
                 if isinstance(part, bytes):
+                    candidate_encodings = []
                     if charset:
+                        candidate_encodings.append(charset)
+                        normalized = charset.lower()
+                        # 一些旧邮件头会标成 gb2312，但实际字节需要 gbk/gb18030 才能完整解出。
+                        if normalized in ('gb2312', 'gb_2312-80', 'gb2312-80'):
+                            candidate_encodings.extend(['gbk', 'gb18030'])
+                        elif normalized == 'gbk':
+                            candidate_encodings.append('gb18030')
+
+                    candidate_encodings.extend([config.DEFAULT_ENCODING, *config.FALLBACK_ENCODINGS, 'utf-8'])
+
+                    decoded_text = None
+                    seen = set()
+                    for encoding in candidate_encodings:
+                        if not encoding:
+                            continue
+
+                        normalized = encoding.lower()
+                        if normalized in seen:
+                            continue
+                        seen.add(normalized)
+
                         try:
-                            result.append(part.decode(charset))
+                            decoded_text = part.decode(encoding)
+                            break
                         except (UnicodeDecodeError, LookupError):
-                            result.append(part.decode('utf-8', errors='replace'))
-                    else:
-                        result.append(part.decode('utf-8', errors='replace'))
+                            continue
+
+                    if decoded_text is None:
+                        decoded_text = part.decode('utf-8', errors='replace')
+
+                    result.append(decoded_text)
                 else:
                     result.append(part)
             return ''.join(result)
