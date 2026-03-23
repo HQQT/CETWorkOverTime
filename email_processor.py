@@ -350,7 +350,7 @@ class EmailProcessor:
 
         logger.info(f"成功解析 {len(email_data_list)} 个邮件文件")
 
-        # ====== 入库到 MySQL ======
+        # ====== 入库到 PostgreSQL ======
         self._save_to_database(email_data_list)
 
         # 过滤指定月份的邮件
@@ -438,7 +438,7 @@ class EmailProcessor:
             self._update_cache_after_processing([], email_files, cache)
             return True
 
-        # ====== 入库到 MySQL ======
+        # ====== 入库到 PostgreSQL ======
         self._save_to_database(email_data_list)
 
         # 生成受影响月份的报告
@@ -619,7 +619,7 @@ class EmailProcessor:
 
     def _save_to_database(self, email_data_list: List[EmailData]):
         """
-        将解析后的邮件数据批量保存到 MySQL
+        将解析后的邮件数据批量保存到 PostgreSQL
 
         如果数据库模块不可用则静默跳过。
         """
@@ -648,7 +648,7 @@ class EmailProcessor:
         """
         repo = _get_repository()
         if repo is None:
-            raise RuntimeError("数据库模块不可用，请检查 MySQL 配置")
+            raise RuntimeError("数据库模块不可用，请检查 PostgreSQL 配置")
 
         logger.info("开始历史数据同步到数据库")
         email_files = self._scan_email_files()

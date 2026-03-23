@@ -1,184 +1,210 @@
 """
 数据库连接管理模块
 
-提供 MySQL 连接池管理和按年分表路由功能。
+提供 PostgreSQL 连接池管理和单表 Schema 初始化功能。
 """
 
 import logging
-from typing import Optional
-
-import pymysql
-from dbutils.pooled_db import PooledDB
+from typing import Any, Optional, TYPE_CHECKING
 
 import config
 
+if TYPE_CHECKING:
+    from psycopg_pool import ConnectionPool
+
 logger = logging.getLogger(__name__)
 
+EMAILS_TABLE_NAME = "emails"
+META_TABLE_NAME = "email_meta"
+
+_CREATE_EMAILS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS emails (
+    id              BIGSERIAL PRIMARY KEY,
+    email_date      DATE NOT NULL UNIQUE,
+    subject         VARCHAR(500) NOT NULL DEFAULT '',
+    sender          VARCHAR(200) NOT NULL DEFAULT '',
+    content         TEXT NOT NULL,
+    raw_content     TEXT,
+    diligence_start TIME DEFAULT NULL,
+    diligence_end   TIME DEFAULT NULL,
+    diligence_hours NUMERIC(5, 2) DEFAULT 0,
+    message_id      VARCHAR(500) DEFAULT '',
+    source_filename VARCHAR(500) DEFAULT '',
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+_CREATE_EMAILS_INDEXES_SQL = [
+    "CREATE INDEX IF NOT EXISTS idx_emails_message_id ON emails (message_id)",
+    "CREATE INDEX IF NOT EXISTS idx_emails_email_date ON emails (email_date)",
+]
+
+_CREATE_META_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS email_meta (
+    id          BIGSERIAL PRIMARY KEY,
+    meta_key    VARCHAR(100) NOT NULL UNIQUE,
+    meta_value  TEXT,
+    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
 # 全局连接池（延迟初始化）
-_pool: Optional[PooledDB] = None
+_pool: Optional["ConnectionPool"] = None
+_tables_ready = False
 
 
-def _create_pool() -> PooledDB:
-    """创建数据库连接池"""
-    return PooledDB(
-        creator=pymysql,
-        maxconnections=10,
-        mincached=2,
-        maxcached=5,
-        blocking=True,
-        host=config.DB_HOST,
-        port=config.DB_PORT,
-        user=config.DB_USER,
-        password=config.DB_PASSWORD,
-        database=config.DB_NAME,
-        charset=config.DB_CHARSET,
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True,
+def _load_postgres_modules():
+    import psycopg
+    from psycopg.rows import dict_row
+    from psycopg_pool import ConnectionPool
+
+    return psycopg, dict_row, ConnectionPool
+
+
+def _build_conninfo(dbname: Optional[str] = None) -> str:
+    parts = [
+        f"host={config.DB_HOST}",
+        f"port={config.DB_PORT}",
+        f"user={config.DB_USER}",
+        f"password={config.DB_PASSWORD}",
+        f"dbname={dbname or config.DB_NAME}",
+    ]
+    return " ".join(parts)
+
+
+class _PooledConnection:
+    """将 psycopg_pool.getconn() 返回的连接包装成现有代码可用的 close() 语义。"""
+
+    def __init__(self, pool: "ConnectionPool", conn: Any):
+        self._pool = pool
+        self._conn = conn
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
+
+    def close(self):
+        if self._conn is not None:
+            self._pool.putconn(self._conn)
+            self._conn = None
+
+
+def _create_pool():
+    """创建 PostgreSQL 连接池。"""
+    _, dict_row, ConnectionPool = _load_postgres_modules()
+    return ConnectionPool(
+        conninfo=_build_conninfo(),
+        min_size=2,
+        max_size=10,
+        kwargs={
+            "autocommit": True,
+            "row_factory": dict_row,
+        },
     )
 
 
 def get_connection():
     """
-    从连接池获取一个数据库连接
+    从连接池获取一个数据库连接。
 
     Returns:
-        pymysql 连接对象（用完后应调用 .close() 归还连接池）
+        可直接 `.close()` 归还连接池的 psycopg 连接包装对象
     """
     global _pool
     if _pool is None:
         _pool = _create_pool()
-        logger.info(f"数据库连接池已创建: {config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}")
-    return _pool.connection()
+        logger.info(f"PostgreSQL 连接池已创建: {config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}")
+    return _PooledConnection(_pool, _pool.getconn())
 
 
 def get_table_name(year: int) -> str:
     """
-    根据年份返回对应的分表名称
+    保留原接口，统一返回 PostgreSQL 单表名。
 
     Args:
-        year: 年份，如 2024
-
-    Returns:
-        表名，如 'email_2024'
+        year: 年份（已忽略，仅为兼容旧调用方）
     """
-    return f"email_{year}"
+    return EMAILS_TABLE_NAME
 
 
-# ---- 年份表的 DDL 模板 ----
-_CREATE_YEAR_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS {table_name} (
-    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    email_date      DATE NOT NULL COMMENT '邮件日期（工作日）',
-    subject         VARCHAR(500) NOT NULL DEFAULT '' COMMENT '邮件主题',
-    sender          VARCHAR(200) NOT NULL DEFAULT '' COMMENT '发件人',
-    content         TEXT NOT NULL COMMENT '邮件正文（已清洗）',
-    raw_content     MEDIUMTEXT COMMENT '邮件原始正文',
-    diligence_start TIME DEFAULT NULL COMMENT '勤奋时间-开始',
-    diligence_end   TIME DEFAULT NULL COMMENT '勤奋时间-结束',
-    diligence_hours DECIMAL(5,2) DEFAULT 0 COMMENT '勤奋时长(小时)',
-    message_id      VARCHAR(500) DEFAULT '' COMMENT 'Message-ID 去重',
-    source_filename VARCHAR(500) DEFAULT '' COMMENT '来源 .eml 文件名',
-    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    UNIQUE KEY uk_email_date (email_date),
-    INDEX idx_message_id (message_id),
-    INDEX idx_year_month (email_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='邮件工作日志-{year}年';
-"""
-
-_CREATE_META_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS email_meta (
-    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    meta_key        VARCHAR(100) NOT NULL UNIQUE COMMENT '配置键',
-    meta_value      TEXT COMMENT '配置值',
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='系统元数据(缓存、配置等)';
-"""
-
-# 已确认存在的年份表缓存（避免每次都执行 CREATE TABLE IF NOT EXISTS）
-_ensured_tables: set = set()
-
-
-def ensure_meta_table():
-    """确保 email_meta 元数据表存在"""
-    if '_meta' in _ensured_tables:
+def ensure_tables():
+    """确保 PostgreSQL 单表结构已创建。"""
+    global _tables_ready
+    if _tables_ready:
         return
+
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(_CREATE_META_TABLE_SQL)
-        _ensured_tables.add('_meta')
-        logger.debug("email_meta 表已就绪")
+            cur.execute(_CREATE_EMAILS_TABLE_SQL)
+            for sql in _CREATE_EMAILS_INDEXES_SQL:
+                cur.execute(sql)
+        _tables_ready = True
+        logger.info("PostgreSQL 表结构已就绪")
     finally:
         conn.close()
+
+
+def ensure_meta_table():
+    """兼容旧调用方：确保核心表存在。"""
+    ensure_tables()
 
 
 def ensure_year_table(year: int):
-    """
-    确保指定年份的邮件表存在，不存在则自动建表
+    """兼容旧调用方：PostgreSQL 单表模式下不再按年建表。"""
+    ensure_tables()
 
-    Args:
-        year: 年份
-    """
-    table_name = get_table_name(year)
-    if table_name in _ensured_tables:
-        return
 
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            sql = _CREATE_YEAR_TABLE_SQL.format(table_name=table_name, year=year)
-            cur.execute(sql)
-        _ensured_tables.add(table_name)
-        logger.info(f"年份表 {table_name} 已就绪")
-    finally:
-        conn.close()
+def _database_exists(conn, db_name: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
+        return cur.fetchone() is not None
+
+
+def _quote_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
 
 
 def init_db():
     """
-    初始化数据库：自动创建数据库（如不存在）、创建元数据表和当前年份的邮件表
+    初始化数据库：自动创建数据库（如不存在）并创建业务表。
 
     应用启动时调用一次。
     """
-    from datetime import datetime
+    global _pool, _tables_ready
 
-    # 先用不指定 database 的连接创建数据库（如不存在）
+    psycopg, dict_row, _ = _load_postgres_modules()
+
     try:
-        conn = pymysql.connect(
-            host=config.DB_HOST,
-            port=config.DB_PORT,
-            user=config.DB_USER,
-            password=config.DB_PASSWORD,
-            charset=config.DB_CHARSET,
-            cursorclass=pymysql.cursors.DictCursor,
+        admin_conn = psycopg.connect(
+            _build_conninfo("postgres"),
+            autocommit=True,
+            row_factory=dict_row,
         )
         try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"CREATE DATABASE IF NOT EXISTS `{config.DB_NAME}` "
-                    f"DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-                )
-            conn.commit()
-            logger.info(f"数据库 {config.DB_NAME} 已就绪")
+            if not _database_exists(admin_conn, config.DB_NAME):
+                with admin_conn.cursor() as cur:
+                    cur.execute(f"CREATE DATABASE {_quote_identifier(config.DB_NAME)}")
+                logger.info(f"数据库 {config.DB_NAME} 已创建")
+            else:
+                logger.info(f"数据库 {config.DB_NAME} 已就绪")
         finally:
-            conn.close()
+            admin_conn.close()
     except Exception as e:
-        logger.warning(f"自动创建数据库失败（可能已存在）: {e}")
+        logger.warning(f"自动创建 PostgreSQL 数据库失败（可能已存在或权限不足）: {e}")
 
-    ensure_meta_table()
-    current_year = datetime.now().year
-    ensure_year_table(current_year)
-    logger.info(f"数据库初始化完成，当前年份表: email_{current_year}")
+    # 重新创建连接池，确保指向最新数据库
+    close_pool()
+    _tables_ready = False
+    ensure_tables()
+    logger.info("PostgreSQL 数据库初始化完成")
 
 
 def close_pool():
-    """关闭连接池（应用退出时调用）"""
+    """关闭连接池（应用退出时调用）。"""
     global _pool
     if _pool is not None:
         _pool.close()
         _pool = None
-        logger.info("数据库连接池已关闭")
+        logger.info("PostgreSQL 连接池已关闭")

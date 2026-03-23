@@ -79,12 +79,13 @@ TOTP_SECRET = os.getenv("TOTP_SECRET", "JBSWY3DPEHPK3PXP")
 SECRET_KEY = os.getenv("SECRET_KEY", "cetworkovertime-super-secret-key")
 
 
-# ============ MySQL 数据库配置 ============
+# ============ PostgreSQL 数据库配置 ============
 DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = int(os.getenv("DB_PORT", "3306"))
-DB_USER = os.getenv("DB_USER", "root")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
+DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "cetworkovertime")
+# 兼容旧 .env，PostgreSQL 实现不会使用该参数
 DB_CHARSET = os.getenv("DB_CHARSET", "utf8mb4")
 
 # ============ 清理配置 ============

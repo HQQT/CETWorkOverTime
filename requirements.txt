@@ -26,9 +26,9 @@ flask>=3.0.0
 markdown>=3.5.0
 gunicorn>=21.2.0
 
-# MySQL 数据库依赖
-PyMySQL>=1.1.0
-DBUtils>=3.0.0
+# PostgreSQL 数据库依赖
+psycopg[binary]>=3.2.0
+psycopg-pool>=3.2.0
 
 # 2FA 动态密码系统依赖
 pyotp>=2.9.0

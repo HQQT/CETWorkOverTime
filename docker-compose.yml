@@ -1,22 +1,38 @@
 services:
   cetworkovertime:
-    image: pulongzhang/cetworkovertime:2.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cetworkovertime:local
     container_name: cetworkovertime
     ports:
       - "5000:5000"
     environment:
       - TZ=Asia/Shanghai
+      # ================= 修改了这里 =================
+      - DB_HOST=${DB_HOST}           # 创建的外部数据库容器名
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_PASSWORD}        # 用户名
+      - DB_PASSWORD=${DB_PASSWORD}   # 密码
+      - DB_NAME=${DB_NAME}        # 默认生成的数据库名称
+      # ==============================================
     volumes:
       - ./工作总结:/app/工作总结
       - ./output:/app/output
     env_file:
       - .env
     restart: unless-stopped
+    # 删除了 depends_on，因为数据库现在由外部独立管理了
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/status')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    networks:
+      - app_shared_net # 1. 告诉这个容器加入我们刚才建的共享网络
 
-
+# 2. 在底部声明这个网络是外部已经存在的，Docker 不要去新建它
+networks:
+  app_shared_net:
+    external: true

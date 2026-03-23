@@ -1,7 +1,7 @@
 """
 历史数据迁移脚本
 
-将本地 .eml 文件解析后批量写入 MySQL 数据库。
+将本地 .eml 文件解析后批量写入 PostgreSQL 数据库。
 运行方式: python migrate_to_db.py
 """
 
