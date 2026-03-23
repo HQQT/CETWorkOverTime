@@ -11,6 +11,7 @@ import chardet
 
 import config
 from date_utils import DateUtils
+from email_header_decoder import decode_mime_header
 
 logger = logging.getLogger(__name__)
 
@@ -152,35 +153,7 @@ class EmailParser:
         Returns:
             解码后的字符串
         """
-        try:
-            if not header_value:
-                return ""
-            
-            decoded_parts = email.header.decode_header(header_value)
-            result = ""
-            
-            for part, encoding in decoded_parts:
-                if isinstance(part, bytes):
-                    if encoding:
-                        result += part.decode(encoding)
-                    else:
-                        # 尝试常用编码
-                        for enc in [config.DEFAULT_ENCODING] + config.FALLBACK_ENCODINGS:
-                            try:
-                                result += part.decode(enc)
-                                break
-                            except UnicodeDecodeError:
-                                continue
-                        else:
-                            result += part.decode('utf-8', errors='ignore')
-                else:
-                    result += str(part)
-            
-            return result.strip()
-            
-        except Exception as e:
-            logger.error(f"解码邮件头时发生错误: {header_value}, 错误: {e}")
-            return header_value
+        return decode_mime_header(header_value)
     
     def _extract_email_content(self, email_msg: EmailMessage) -> str:
         """

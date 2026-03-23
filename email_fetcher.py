@@ -12,11 +12,11 @@ import re
 import os
 import ssl
 from datetime import datetime, timedelta
-from email.header import decode_header
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
 import config
+from email_header_decoder import decode_mime_header
 
 logger = logging.getLogger(__name__)
 
@@ -507,50 +507,4 @@ class EmailFetcher:
         Returns:
             解码后的字符串
         """
-        if not value:
-            return ""
-
-        try:
-            decoded_parts = decode_header(value)
-            result = []
-            for part, charset in decoded_parts:
-                if isinstance(part, bytes):
-                    candidate_encodings = []
-                    if charset:
-                        candidate_encodings.append(charset)
-                        normalized = charset.lower()
-                        # 一些旧邮件头会标成 gb2312，但实际字节需要 gbk/gb18030 才能完整解出。
-                        if normalized in ('gb2312', 'gb_2312-80', 'gb2312-80'):
-                            candidate_encodings.extend(['gbk', 'gb18030'])
-                        elif normalized == 'gbk':
-                            candidate_encodings.append('gb18030')
-
-                    candidate_encodings.extend([config.DEFAULT_ENCODING, *config.FALLBACK_ENCODINGS, 'utf-8'])
-
-                    decoded_text = None
-                    seen = set()
-                    for encoding in candidate_encodings:
-                        if not encoding:
-                            continue
-
-                        normalized = encoding.lower()
-                        if normalized in seen:
-                            continue
-                        seen.add(normalized)
-
-                        try:
-                            decoded_text = part.decode(encoding)
-                            break
-                        except (UnicodeDecodeError, LookupError):
-                            continue
-
-                    if decoded_text is None:
-                        decoded_text = part.decode('utf-8', errors='replace')
-
-                    result.append(decoded_text)
-                else:
-                    result.append(part)
-            return ''.join(result)
-        except Exception as e:
-            logger.debug(f"解码头部值失败: {e}")
-            return str(value)
+        return decode_mime_header(value)
