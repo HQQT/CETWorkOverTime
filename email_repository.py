@@ -380,12 +380,14 @@ def _serialize_row(row: dict) -> dict:
         return row
 
     import decimal
-    from datetime import date as date_type, datetime as dt_type
+    from datetime import date as date_type, datetime as dt_type, time as time_type
 
     result = {}
     for key, value in row.items():
         if isinstance(value, (date_type, dt_type)):
             result[key] = value.isoformat()
+        elif isinstance(value, time_type):
+            result[key] = value.strftime("%H:%M")
         elif isinstance(value, timedelta):
             total_seconds = int(value.total_seconds())
             hours = total_seconds // 3600

@@ -100,6 +100,26 @@ def _database_status_unavailable_payload() -> dict:
 if _db_import_error is not None:
     _set_db_unavailable("init_failed", f"数据库模块加载失败: {_db_import_error}")
 
+
+def _normalize_time_value(value) -> str:
+    """将 time/字符串/空值统一转换为接口可返回的 HH:MM 字符串。"""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value[:5] if len(value) >= 5 else value
+    formatter = getattr(value, "strftime", None)
+    if callable(formatter):
+        return formatter("%H:%M")
+    return str(value)
+
+
+def _normalize_hours_value(value) -> float:
+    """将工时统一转换为 float，异常时回退为 0.0。"""
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
 # 全局任务状态锁 & 状态
 _task_lock = threading.Lock()
 _task_status = {
@@ -399,7 +419,6 @@ def api_month_diligence(year: int, month: int):
         emails = email_repository.get_emails_by_month(year, month)
         days = []
         for em in emails:
-            from datetime import date as date_type
             email_date = em.get('email_date')
             if isinstance(email_date, str):
                 d_str = email_date
@@ -409,9 +428,9 @@ def api_month_diligence(year: int, month: int):
             days.append({
                 "date": d_str,
                 "subject": em.get('subject', ''),
-                "hours": em.get('diligence_hours', 0.0),
-                "start": em.get('diligence_start', ''),
-                "end": em.get('diligence_end', ''),
+                "hours": _normalize_hours_value(em.get('diligence_hours', 0.0)),
+                "start": _normalize_time_value(em.get('diligence_start', '')),
+                "end": _normalize_time_value(em.get('diligence_end', '')),
                 "content": em.get('content', '')
             })
         

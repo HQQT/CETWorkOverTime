@@ -6,7 +6,7 @@ services:
     image: cetworkovertime:local
     container_name: cetworkovertime
     ports:
-      - "5000:5000"
+      - "15000:5000"
     environment:
       - TZ=Asia/Shanghai
       - DB_HOST=${DB_HOST}           # 创建的外部数据库容器名

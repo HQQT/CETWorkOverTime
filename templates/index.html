@@ -273,7 +273,7 @@
                         <div class="report-item-icon">${r.filename.includes('汇总') ? '📊' : '📄'}</div>
                         <div class="report-item-info">
                             <div class="report-item-name">${r.filename.replace('.md', '')}</div>
-                            <div class="report-item-meta">${r.modified} · ${formatSize(r.size)}</div>
+                            <div class="report-item-meta">${formatReportMeta(r)}</div>
                         </div>
                     </div>
                 `).join('');
@@ -380,7 +380,19 @@
         }
 
         // ==================== 工具函数 ====================
+        function formatReportMeta(report) {
+            if (report.source === 'database') {
+                const entries = Number.isFinite(report.entries) ? report.entries : 0;
+                const hours = Number.isFinite(report.hours) ? report.hours : 0;
+                return `${entries} 条记录 · ${hours.toFixed(1)} 小时`;
+            }
+
+            const modified = report.modified || '未知时间';
+            return `${modified} · ${formatSize(report.size)}`;
+        }
+
         function formatSize(bytes) {
+            if (!Number.isFinite(bytes) || bytes < 0) return '未知大小';
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
