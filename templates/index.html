@@ -21,6 +21,7 @@
         <div style="display:flex;gap:4px;align-items:center;">
             <a href="/" style="display:flex;align-items:center;gap:6px;padding:6px 16px;border-radius:6px;font-size:0.82rem;font-weight:500;color:var(--text-secondary);text-decoration:none;">📊 仪表板</a>
             <a href="/reports" style="display:flex;align-items:center;gap:6px;padding:6px 16px;border-radius:6px;font-size:0.82rem;font-weight:500;color:var(--accent-blue);background:rgba(91,141,238,0.1);border:1px solid rgba(91,141,238,0.25);text-decoration:none;">📋 报告管理</a>
+            <a href="javascript:void(0)" onclick="logout()" style="display:flex;align-items:center;gap:6px;padding:6px 16px;border-radius:6px;font-size:0.82rem;font-weight:500;color:#ef4444;text-decoration:none;margin-left:8px;">🚪 退出</a>
         </div>
         <div class="navbar-status" id="statusIndicator">
             <span class="status-dot"></span>
@@ -162,6 +163,15 @@
         }
 
         // ==================== API 调用 ====================
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                window.location.href = '/login';
+            } catch (e) {
+                console.error('Logout failed', e);
+            }
+        }
+
         async function apiCall(url, options = {}) {
             try {
                 const resp = await fetch(url, options);

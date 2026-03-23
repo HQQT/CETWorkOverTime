@@ -410,6 +410,7 @@
         <div class="nav-tabs">
             <a href="/" class="nav-tab active">📊 仪表板</a>
             <a href="/reports" class="nav-tab">📋 报告管理</a>
+            <a href="javascript:void(0)" onclick="logout()" class="nav-tab" style="color:var(--accent-red); margin-left: 10px;">🚪 退出</a>
         </div>
         <div class="navbar-status" id="statusIndicator">
             <span class="status-dot"></span>
@@ -486,6 +487,16 @@
                 }
             } catch(e) {
                 document.getElementById('statusIndicator').querySelector('.status-text').textContent = '连接失败';
+            }
+        }
+
+        // ==================== API 调用与功能 ====================
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                window.location.href = '/login';
+            } catch (e) {
+                console.error('Logout failed', e);
             }
         }
 

@@ -11,9 +11,6 @@ services:
       - ./output:/app/output
     env_file:
       - .env
-    depends_on:
-      mysql:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/status')"]
@@ -22,26 +19,4 @@ services:
       retries: 3
       start_period: 10s
 
-  mysql:
-    image: mysql:8.0
-    container_name: cetworkovertime-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-cetworkovertime}
-      MYSQL_DATABASE: ${DB_NAME:-cetworkovertime}
-      MYSQL_CHARSET: utf8mb4
-      MYSQL_COLLATION: utf8mb4_unicode_ci
-    ports:
-      - "3307:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
-volumes:
-  mysql_data:

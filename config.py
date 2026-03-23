@@ -74,6 +74,11 @@ IMAP_MAILBOX = os.getenv("IMAP_MAILBOX", "&XeVPXGXlX9c-")  # 工作日志 文件
 IMAP_SEARCH_SUBJECT = os.getenv("IMAP_SEARCH_SUBJECT", "--工作日志")  # 搜索邮件主题关键词
 IMAP_SEARCH_DAYS = int(os.getenv("IMAP_SEARCH_DAYS", "365"))
 
+# ============ 系统登录配置 ============
+TOTP_SECRET = os.getenv("TOTP_SECRET", "JBSWY3DPEHPK3PXP")
+SECRET_KEY = os.getenv("SECRET_KEY", "cetworkovertime-super-secret-key")
+
+
 # ============ MySQL 数据库配置 ============
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", "3306"))

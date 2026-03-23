@@ -353,12 +353,11 @@ def get_all_years() -> List[int]:
             try:
                 year = int(table_name.replace('email_', ''))
                 # 检查表是否有数据
-                with get_connection() as conn2:
-                    with conn2.cursor() as cur2:
-                        cur2.execute(f"SELECT COUNT(*) AS cnt FROM {table_name}")
-                        cnt = cur2.fetchone()['cnt']
-                        if cnt > 0:
-                            years.append(year)
+                # 复用同一个数据库连接，使用 SELECT 1 提升性能
+                with conn.cursor() as cur2:
+                    cur2.execute(f"SELECT 1 FROM {table_name} LIMIT 1")
+                    if cur2.fetchone():
+                        years.append(year)
             except (ValueError, Exception):
                 continue
 

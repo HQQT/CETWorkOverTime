@@ -10,7 +10,11 @@ import threading
 from pathlib import Path
 from datetime import datetime
 
-from flask import Flask, render_template, jsonify, request, abort
+from flask import Flask, render_template, jsonify, request, abort, session, redirect, url_for
+try:
+    import pyotp
+except ImportError:
+    pyotp = None
 
 import config
 from email_fetcher import EmailFetcher
@@ -32,6 +36,17 @@ except ImportError:
     pass
 
 app = Flask(__name__)
+app.secret_key = config.SECRET_KEY
+
+@app.before_request
+def check_login():
+    # 白名单路由：登录页、登录API、静态文件
+    allowed_routes = ['login_page', 'api_login', 'static']
+    if request.endpoint not in allowed_routes:
+        if not session.get('logged_in'):
+            if request.path.startswith('/api/'):
+                return jsonify({'ok': False, 'error': '未授权，请先登录'}), 401
+            return redirect(url_for('login_page'))
 
 # 日志配置
 logging.basicConfig(
@@ -203,6 +218,35 @@ def index():
 def reports_page():
     """报告管理页面"""
     return render_template("index.html")
+
+
+@app.route("/login")
+def login_page():
+    """登录页面"""
+    return render_template("login.html")
+
+
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    """登录 API"""
+    data = request.get_json(silent=True) or {}
+    password = data.get("password", "")
+    
+    if pyotp is None:
+        return jsonify({"ok": False, "error": "服务端未安装 pyotp 依赖，无法校验动态验证码"}), 500
+
+    totp = pyotp.TOTP(config.TOTP_SECRET)
+    if totp.verify(password):
+        session['logged_in'] = True
+        return jsonify({"ok": True, "message": "登录成功"})
+    return jsonify({"ok": False, "error": "动态验证码错误或已失效"}), 401
+
+
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    """登出 API"""
+    session.pop('logged_in', None)
+    return jsonify({"ok": True})
 
 
 # ==================== API 路由 ====================
