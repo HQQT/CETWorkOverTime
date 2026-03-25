@@ -348,7 +348,50 @@ body {
     color: var(--accent-blue);
 }
 
+.btn-inline {
+    width: auto;
+    white-space: nowrap;
+}
+
 /* ---------- 报告列表 ---------- */
+.reports-header {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.reports-header .panel-title {
+    margin-bottom: 0;
+}
+
+.reports-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.report-select-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.report-select-all input[type="checkbox"],
+.report-item-check input[type="checkbox"] {
+    accent-color: var(--accent-blue);
+}
+
+.report-selection-count {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+}
+
 .report-list {
     max-height: 480px;
     overflow-y: auto;
@@ -386,14 +429,40 @@ body {
     border-color: rgba(91, 141, 238, 0.15);
 }
 
+.report-item.selected {
+    background: rgba(76, 202, 141, 0.08);
+    border-color: rgba(76, 202, 141, 0.25);
+}
+
 .report-item.active {
     background: rgba(91, 141, 238, 0.1);
     border-color: rgba(91, 141, 238, 0.3);
 }
 
+.report-item.active.selected {
+    background: linear-gradient(135deg, rgba(91, 141, 238, 0.12), rgba(76, 202, 141, 0.1));
+    border-color: rgba(91, 141, 238, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(76, 202, 141, 0.18);
+}
+
+.report-item-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
 .report-item-icon {
     font-size: 1.3rem;
     flex-shrink: 0;
+}
+
+.report-item-info {
+    min-width: 0;
+    flex: 1;
 }
 
 .report-item-name {
@@ -695,5 +764,11 @@ body {
     }
     .navbar {
         padding: 0 12px;
+    }
+    .reports-toolbar {
+        align-items: stretch;
+    }
+    .btn-inline {
+        width: 100%;
     }
 }

@@ -5,6 +5,9 @@ CETWorkOverTime Web 服务
 
 import os
 import sys
+import io
+import re
+import zipfile
 import logging
 import threading
 from pathlib import Path
@@ -62,6 +65,16 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+_MONTHLY_REPORT_FILENAME_RE = re.compile(r"^(?P<year>\d{4})年(?P<month>\d{2})月工作总结\.md$")
+
+
+class ReportLookupError(Exception):
+    """报告读取失败，供不同接口复用统一错误处理。"""
+
+    def __init__(self, message: str, status_code: int = 404):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def _set_db_unavailable(reason_code: str, message: str):
@@ -475,6 +488,11 @@ def api_status():
 @app.route("/api/reports")
 def api_reports():
     """获取所有报告列表（从数据库动态生成）"""
+    return jsonify({"ok": True, "reports": _collect_reports()})
+
+
+def _collect_reports() -> list[dict]:
+    """收集当前可展示、可下载的报告列表。"""
     reports = []
 
     if _db_available:
@@ -507,7 +525,7 @@ def api_reports():
                     "source": "file"
                 })
 
-    return jsonify({"ok": True, "reports": reports})
+    return reports
 
 
 def _generate_report_from_db(year: int, month: int) -> str:
@@ -574,34 +592,57 @@ def _generate_report_from_db(year: int, month: int) -> str:
     return '\n'.join(lines)
 
 
-@app.route("/api/report/<path:filename>")
-def api_report(filename):
-    """获取单个报告内容（优先从数据库动态生成）"""
-    import re as _re
+def _validate_report_filename(filename: str) -> str:
+    """限制报告名只能是当前目录下的单个文件名，拒绝路径穿越。"""
+    if not isinstance(filename, str):
+        raise ReportLookupError("非法报告文件名", 400)
 
+    normalized = filename.strip()
+    if not normalized or Path(normalized).name != normalized:
+        raise ReportLookupError("非法报告文件名", 400)
+
+    return normalized
+
+
+def _get_report_markdown(filename: str) -> str:
+    """统一获取报告 Markdown，优先数据库动态生成，失败后回退本地文件。"""
+    safe_filename = _validate_report_filename(filename)
     raw_md = None
 
-    # 尝试从文件名解析年月，从数据库生成
     if _db_available:
-        match = _re.search(r'(\d{4})年(\d{2})月', filename)
+        match = _MONTHLY_REPORT_FILENAME_RE.fullmatch(safe_filename)
         if match:
-            year = int(match.group(1))
-            month = int(match.group(2))
             try:
-                raw_md = _generate_report_from_db(year, month)
+                raw_md = _generate_report_from_db(
+                    int(match.group("year")),
+                    int(match.group("month"))
+                )
             except Exception as e:
                 logger.warning(f"从数据库生成报告失败，尝试本地文件: {e}")
 
-    # 回退到本地文件
     if raw_md is None:
-        report_path = config.OUTPUT_DIR / filename
-        if not report_path.exists() or not report_path.is_file():
-            abort(404, description=f"报告不存在: {filename}")
+        report_path = config.OUTPUT_DIR / safe_filename
         try:
             report_path.resolve().relative_to(config.OUTPUT_DIR.resolve())
-        except ValueError:
-            abort(403, description="非法路径")
+        except ValueError as exc:
+            raise ReportLookupError("非法报告路径", 400) from exc
+
+        if not report_path.exists() or not report_path.is_file():
+            raise ReportLookupError(f"报告不存在: {safe_filename}", 404)
+
         raw_md = report_path.read_text(encoding="utf-8")
+
+    return raw_md
+
+
+@app.route("/api/report/<path:filename>")
+def api_report(filename):
+    """获取单个报告内容（优先从数据库动态生成）"""
+    try:
+        safe_filename = _validate_report_filename(filename)
+        raw_md = _get_report_markdown(safe_filename)
+    except ReportLookupError as exc:
+        abort(exc.status_code, description=str(exc))
 
     # 是否请求 HTML 渲染
     render_html = request.args.get("html", "1") == "1"
@@ -613,6 +654,46 @@ def api_report(filename):
         return jsonify({"ok": True, "filename": filename, "html": html_content, "markdown": raw_md})
     else:
         return jsonify({"ok": True, "filename": filename, "markdown": raw_md})
+
+
+@app.route("/api/reports/download", methods=["POST"])
+def api_reports_download():
+    """将所选报告打包为 ZIP 下载。"""
+    data = request.get_json(silent=True) or {}
+    filenames = data.get("filenames")
+    if not isinstance(filenames, list) or not filenames:
+        return jsonify({"ok": False, "error": "至少选择一份报告后再下载"}), 400
+
+    selected_filenames = []
+    seen = set()
+    try:
+        for item in filenames:
+            safe_filename = _validate_report_filename(item)
+            if safe_filename not in seen:
+                seen.add(safe_filename)
+                selected_filenames.append(safe_filename)
+
+        available_filenames = {report["filename"] for report in _collect_reports()}
+        for filename in selected_filenames:
+            if filename not in available_filenames:
+                raise ReportLookupError(f"报告不存在: {filename}", 404)
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for filename in selected_filenames:
+                archive.writestr(filename, _get_report_markdown(filename).encode("utf-8"))
+
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        headers = {
+            "Content-Type": "application/zip",
+            "Content-Disposition": f'attachment; filename="reports-{timestamp}.zip"',
+        }
+        return zip_buffer.getvalue(), 200, headers
+    except ReportLookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), exc.status_code
+    except Exception as e:
+        logger.error(f"批量下载报告失败: {e}", exc_info=True)
+        return jsonify({"ok": False, "error": "批量下载失败，请稍后重试"}), 500
 
 
 @app.route("/api/fetch", methods=["POST"])

@@ -111,7 +111,19 @@
 
                 <!-- 报告列表 -->
                 <div class="panel reports-panel">
-                    <h2 class="panel-title">📋 报告列表</h2>
+                    <div class="reports-header">
+                        <h2 class="panel-title">📋 报告列表</h2>
+                        <div class="reports-toolbar">
+                            <label class="report-select-all" for="selectAllReports">
+                                <input type="checkbox" id="selectAllReports" onchange="toggleSelectAllReports(this.checked)">
+                                <span>全选</span>
+                            </label>
+                            <span class="report-selection-count" id="selectedReportCount">已选 0 项</span>
+                            <button class="btn btn-ghost btn-inline" id="btnDownloadReports" onclick="downloadSelectedReports()" disabled>
+                                <span>下载已选</span>
+                            </button>
+                        </div>
+                    </div>
                     <div class="report-list" id="reportList">
                         <div class="loading-placeholder">加载中...</div>
                     </div>
@@ -156,6 +168,8 @@
         let showingHtml = true;
         let currentReportData = null;
         let statusPollTimer = null;
+        let reportListData = [];
+        let selectedReports = new Set();
 
         // ==================== 初始化 ====================
         document.addEventListener('DOMContentLoaded', () => {
@@ -258,34 +272,185 @@
 
         // ==================== 报告列表 ====================
         async function loadReports() {
+            const list = document.getElementById('reportList');
+
             try {
                 const data = await apiCall('/api/reports');
-                const list = document.getElementById('reportList');
+                reportListData = data.reports;
 
-                if (data.reports.length === 0) {
+                const availableReports = new Set(reportListData.map(report => report.filename));
+                selectedReports = new Set(
+                    Array.from(selectedReports).filter(filename => availableReports.has(filename))
+                );
+
+                if (reportListData.length === 0) {
+                    currentReport = null;
+                    currentReportData = null;
                     list.innerHTML = '<div class="empty-list">暂无报告<br><small>请先抓取邮件并生成报告</small></div>';
+                    updateReportSelectionUI();
                     return;
                 }
 
-                list.innerHTML = data.reports.map(r => `
-                    <div class="report-item ${currentReport === r.filename ? 'active' : ''}"
-                         onclick="viewReport('${r.filename}')">
-                        <div class="report-item-icon">${r.filename.includes('汇总') ? '📊' : '📄'}</div>
+                renderReports();
+            } catch (e) {
+                reportListData = [];
+                selectedReports = new Set();
+                list.innerHTML = '<div class="empty-list">加载失败</div>';
+                updateReportSelectionUI();
+            }
+        }
+
+        function renderReports() {
+            const list = document.getElementById('reportList');
+
+            if (reportListData.length === 0) {
+                list.innerHTML = '<div class="empty-list">暂无报告<br><small>请先抓取邮件并生成报告</small></div>';
+                updateReportSelectionUI();
+                return;
+            }
+
+            list.innerHTML = reportListData.map(report => {
+                const isActive = currentReport === report.filename;
+                const isSelected = selectedReports.has(report.filename);
+                const encodedFilename = encodeURIComponent(report.filename);
+
+                return `
+                    <div class="report-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}"
+                         data-filename="${encodeURIComponent(report.filename)}">
+                        <label class="report-item-check">
+                            <input type="checkbox" ${isSelected ? 'checked' : ''}
+                                   data-filename="${encodedFilename}">
+                        </label>
+                        <div class="report-item-icon">${report.filename.includes('汇总') ? '📊' : '📄'}</div>
                         <div class="report-item-info">
-                            <div class="report-item-name">${r.filename.replace('.md', '')}</div>
-                            <div class="report-item-meta">${formatReportMeta(r)}</div>
+                            <div class="report-item-name">${report.filename.replace('.md', '')}</div>
+                            <div class="report-item-meta">${formatReportMeta(report)}</div>
                         </div>
                     </div>
-                `).join('');
-            } catch (e) {
-                document.getElementById('reportList').innerHTML = '<div class="empty-list">加载失败</div>';
+                `;
+            }).join('');
+
+            attachReportListHandlers();
+            updateReportSelectionUI();
+        }
+
+        function attachReportListHandlers() {
+            const list = document.getElementById('reportList');
+
+            list.querySelectorAll('.report-item').forEach(item => {
+                item.addEventListener('click', (event) => {
+                    if (event.target.closest('.report-item-check')) {
+                        return;
+                    }
+
+                    const filename = decodeReportFilename(item.dataset.filename);
+                    if (filename) {
+                        viewReport(filename);
+                    }
+                });
+            });
+
+            list.querySelectorAll('.report-item-check input[type="checkbox"]').forEach(input => {
+                input.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                });
+                input.addEventListener('change', (event) => {
+                    event.stopPropagation();
+
+                    const filename = decodeReportFilename(input.dataset.filename);
+                    if (filename) {
+                        toggleReportSelection(filename, input.checked);
+                    }
+                });
+            });
+        }
+
+        function toggleReportSelection(filename, checked) {
+            if (checked) {
+                selectedReports.add(filename);
+            } else {
+                selectedReports.delete(filename);
+            }
+
+            renderReports();
+        }
+
+        function toggleSelectAllReports(checked) {
+            if (checked) {
+                selectedReports = new Set(reportListData.map(report => report.filename));
+            } else {
+                selectedReports = new Set();
+            }
+
+            renderReports();
+        }
+
+        function updateReportSelectionUI() {
+            const count = selectedReports.size;
+            const downloadBtn = document.getElementById('btnDownloadReports');
+            const selectAll = document.getElementById('selectAllReports');
+
+            document.getElementById('selectedReportCount').textContent = `已选 ${count} 项`;
+            downloadBtn.disabled = count === 0;
+            selectAll.disabled = reportListData.length === 0;
+
+            if (reportListData.length === 0) {
+                selectAll.checked = false;
+                selectAll.indeterminate = false;
+                return;
+            }
+
+            selectAll.checked = count > 0 && count === reportListData.length;
+            selectAll.indeterminate = count > 0 && count < reportListData.length;
+        }
+
+        async function downloadSelectedReports() {
+            const filenames = Array.from(selectedReports);
+            if (filenames.length === 0) {
+                showToast('请先选择要下载的报告', 'info');
+                return;
+            }
+
+            const button = document.getElementById('btnDownloadReports');
+            const buttonLabel = button.querySelector('span');
+            button.disabled = true;
+            buttonLabel.textContent = '正在打包...';
+
+            try {
+                const resp = await fetch('/api/reports/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filenames })
+                });
+
+                if (!resp.ok) {
+                    let message = `HTTP ${resp.status}`;
+                    try {
+                        const data = await resp.json();
+                        message = data.error || message;
+                    } catch (e) {
+                        // ignore non-json errors
+                    }
+                    throw new Error(message);
+                }
+
+                const blob = await resp.blob();
+                const disposition = resp.headers.get('Content-Disposition') || '';
+                const downloadName = getDownloadFilename(disposition) || 'reports.zip';
+                triggerFileDownload(blob, downloadName);
+                showToast(`已开始下载 ${filenames.length} 份报告`, 'success');
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                buttonLabel.textContent = '下载已选';
+                updateReportSelectionUI();
             }
         }
 
         // ==================== 查看报告 ====================
         async function viewReport(filename) {
             currentReport = filename;
-            loadReports(); // 刷新高亮
+            renderReports();
 
             const viewer = document.getElementById('viewerBody');
             viewer.innerHTML = '<div class="loading-placeholder">加载中...</div>';
@@ -396,6 +561,31 @@
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function getDownloadFilename(contentDisposition) {
+            const match = contentDisposition.match(/filename="([^"]+)"/);
+            return match ? match[1] : '';
+        }
+
+        function triggerFileDownload(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        function decodeReportFilename(value) {
+            try {
+                return decodeURIComponent(value || '');
+            } catch (e) {
+                showToast('报告文件名解析失败', 'error');
+                return '';
+            }
         }
 
         function escapeHtml(str) {
