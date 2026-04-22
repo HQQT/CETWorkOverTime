@@ -3,22 +3,7 @@ import os
 from datetime import datetime
 from collections import defaultdict
 
-def parse_time(time_str):
-    """Parse time string like '17:45' to minutes since midnight"""
-    hours, minutes = map(int, time_str.split(':'))
-    return hours * 60 + minutes
-
-def calculate_duration(start_time, end_time):
-    """Calculate duration in hours between two time strings"""
-    start_minutes = parse_time(start_time)
-    end_minutes = parse_time(end_time)
-
-    # Handle cases where end time is past midnight
-    if end_minutes < start_minutes:
-        end_minutes += 24 * 60
-
-    duration_minutes = end_minutes - start_minutes
-    return duration_minutes / 60.0
+from diligence_time import sum_diligence_hours
 
 def extract_year_month(filename):
     """Extract year and month from filename like '2024年07月工作总结.md'"""
@@ -45,13 +30,12 @@ for filename in os.listdir(output_dir):
             content = f.read()
 
         # Find all diligence time entries
-        pattern = r'\[勤奋时间\]\[(\d{1,2}:\d{2})\]\[(\d{1,2}:\d{2})\]'
-        matches = re.findall(pattern, content)
+        month_hours = sum_diligence_hours(content)
+        if month_hours <= 0:
+            continue
 
         month_key = f"{year}年{month}月"
-        for start_time, end_time in matches:
-            duration = calculate_duration(start_time, end_time)
-            monthly_totals[month_key] += duration
+        monthly_totals[month_key] += month_hours
 
 # Sort by year and month
 sorted_months = sorted(monthly_totals.keys(), key=lambda x: (x[:4], x[5:7]))

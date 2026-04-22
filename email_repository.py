@@ -5,11 +5,11 @@
 """
 
 import logging
-import re
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from db import ensure_meta_table, ensure_year_table, get_connection, get_table_name
+from diligence_time import extract_last_diligence_record
 
 logger = logging.getLogger(__name__)
 
@@ -38,25 +38,7 @@ def _parse_diligence_time(content: str) -> dict:
     Returns:
         {'start': 'HH:MM', 'end': 'HH:MM', 'hours': float} 或空字典
     """
-    pattern = r'\[勤奋时间\]\[(\d{1,2}:\d{2})\]\[(\d{1,2}:\d{2})\]'
-    matches = re.findall(pattern, content or '')
-    if not matches:
-        return {}
-
-    start_str, end_str = matches[-1]
-    sh, sm = map(int, start_str.split(':'))
-    eh, em = map(int, end_str.split(':'))
-    start_min = sh * 60 + sm
-    end_min = eh * 60 + em
-    if end_min < start_min:
-        end_min += 24 * 60
-    hours = round((end_min - start_min) / 60.0, 2)
-
-    return {
-        'start': start_str,
-        'end': end_str,
-        'hours': hours,
-    }
+    return extract_last_diligence_record(content)
 
 
 # ==================== 邮件 CRUD ====================
@@ -310,6 +292,61 @@ def get_all_years() -> List[int]:
             """)
             rows = cur.fetchall()
         return [int(row['year']) for row in rows]
+    finally:
+        conn.close()
+
+
+def recalculate_diligence_fields(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+) -> Dict[str, int]:
+    """
+    Recalculate derived diligence fields from stored content.
+    """
+    table = _table_name_for_date(start_date or end_date or date.today())
+    select_sql = f"SELECT id, email_date, content FROM {table}"
+    params = None
+
+    if start_date and end_date:
+        select_sql += " WHERE email_date BETWEEN %s AND %s"
+        params = (start_date, end_date)
+    elif start_date:
+        select_sql += " WHERE email_date >= %s"
+        params = (start_date,)
+    elif end_date:
+        select_sql += " WHERE email_date <= %s"
+        params = (end_date,)
+
+    select_sql += " ORDER BY email_date"
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(select_sql, params)
+            rows = cur.fetchall()
+
+            updated = 0
+            for row in rows:
+                diligence = _parse_diligence_time(row.get("content") or "")
+                cur.execute(
+                    f"""
+                    UPDATE {table}
+                    SET diligence_start = %s,
+                        diligence_end = %s,
+                        diligence_hours = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    """,
+                    (
+                        diligence.get("start"),
+                        diligence.get("end"),
+                        diligence.get("hours", 0),
+                        row["id"],
+                    ),
+                )
+                updated += 1
+
+        return {"scanned": len(rows), "updated": updated}
     finally:
         conn.close()
 

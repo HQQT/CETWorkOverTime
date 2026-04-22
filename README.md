@@ -142,6 +142,17 @@ CETWorkOverTime/
 4. **抓取到了邮件但正文为空**
    - 检查 `config.py` 中的 `CONTENT_START_MARKERS` / `CONTENT_END_MARKERS` 是否覆盖你的日报模板。
 
+5. **我改了数据库里的正文，但仪表盘勤奋时长没变**
+   - 仪表盘优先读取数据库里的 `diligence_start` / `diligence_end` / `diligence_hours` 派生字段，不是每次都从 `content` 实时重算。
+   - `.process_cache.json` 和 `fetch_cache` 也不负责缓存仪表盘结果；它们只影响抓取/处理流程。
+   - 如果你手工修改了 `content` 中的 `[勤奋时间]`，请执行：
+
+```bash
+python recalculate_diligence_fields.py --start-date 2026-02-01 --end-date 2026-02-28
+```
+
+   - 不传日期参数时会全量重算整个 `emails` 表中的派生字段。
+
 ## 📄 许可证
 
 MIT License

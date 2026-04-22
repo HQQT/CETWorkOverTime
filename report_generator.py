@@ -10,6 +10,7 @@ from datetime import datetime
 from collections import defaultdict
 
 import config
+from diligence_time import sum_diligence_hours
 from email_parser import EmailData
 from date_utils import DateUtils
 
@@ -106,19 +107,7 @@ class ReportGenerator:
         计算单封邮件中的勤奋时间总时长
         """
         try:
-            pattern = r'\[勤奋时间\]\[(\d{1,2}:\d{2})\]\[(\d{1,2}:\d{2})\]'
-            matches = re.findall(pattern, email.content)
-            
-            total_duration = 0.0
-            for start_time, end_time in matches:
-                total_duration += self._calculate_duration(start_time, end_time)
-            
-            # 调试日志：如果找到时间，打印一下
-            if total_duration > 0:
-                pass
-                # logger.debug(f"解析到勤奋时间: {email.filename} -> {total_duration}h")
-            
-            return total_duration
+            return sum_diligence_hours(email.content)
         except Exception:
             return 0.0
     
@@ -321,13 +310,11 @@ class ReportGenerator:
                         content = f.read()
 
                     # 查找所有勤奋时间条目
-                    pattern = r'\[勤奋时间\]\[(\d{1,2}:\d{2})\]\[(\d{1,2}:\d{2})\]'
-                    matches = re.findall(pattern, content)
+                    month_hours = sum_diligence_hours(content)
+                    if month_hours <= 0:
+                        continue
 
-                    # 计算该月总时长
-                    for start_time, end_time in matches:
-                        duration = self._calculate_duration(start_time, end_time)
-                        monthly_totals[month_key] += duration
+                    monthly_totals[month_key] += month_hours
 
                     logger.debug(f"统计 {month_key} 勤奋时间: {monthly_totals[month_key]:.2f} 小时")
 

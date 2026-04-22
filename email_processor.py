@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Set
 import sys
 
 import config
+from diligence_time import sum_diligence_minutes
 from email_parser import EmailParser, EmailData
 from report_generator import ReportGenerator
 from date_utils import DateUtils
@@ -261,30 +262,12 @@ class EmailProcessor:
             else:
                 # 多个邮件，保留勤奋时间最长的那个
                 duplicate_count += len(emails) - 1
-                
-                # 定义辅助函数计算勤奋时间
-                def get_diligence_duration(content):
-                    try:
-                        pattern = r'\[勤奋时间\]\[(\d{1,2}:\d{2})\]\[(\d{1,2}:\d{2})\]'
-                        matches = re.findall(pattern, content)
-                        total_minutes = 0
-                        for start, end in matches:
-                            h1, m1 = map(int, start.split(':'))
-                            h2, m2 = map(int, end.split(':'))
-                            start_mins = h1 * 60 + m1
-                            end_mins = h2 * 60 + m2
-                            if end_mins < start_mins:
-                                end_mins += 24 * 60
-                            total_minutes += (end_mins - start_mins)
-                        return total_minutes
-                    except:
-                        return 0
 
                 # 找出勤奋时间最长的邮件
-                best_email = max(emails, key=lambda e: get_diligence_duration(e.content))
+                best_email = max(emails, key=lambda e: sum_diligence_minutes(e.content))
                 
                 # 如果都没有勤奋时间，退化为保留内容最长的
-                if get_diligence_duration(best_email.content) == 0:
+                if sum_diligence_minutes(best_email.content) == 0:
                      best_email = max(emails, key=lambda e: len(e.content))
 
                 # 更新文件名为合并样式，以便知道来源（可选，或者保持原名）

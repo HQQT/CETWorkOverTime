@@ -20,6 +20,7 @@ except ImportError:
     pyotp = None
 
 import config
+from diligence_time import extract_normalized_diligence_records
 from email_fetcher import EmailFetcher
 from email_processor import EmailProcessor
 
@@ -368,27 +369,19 @@ def api_diligence():
 
             try:
                 content = report_file.read_text(encoding="utf-8")
-                pattern = r'\[勤奋时间\]\[(\d{1,2}:\d{2})\]\[(\d{1,2}:\d{2})\]'
-                matches = _re.findall(pattern, content)
-
-                total_hours = 0.0
-                for start_str, end_str in matches:
-                    sh, sm = map(int, start_str.split(':'))
-                    eh, em = map(int, end_str.split(':'))
-                    start_min = sh * 60 + sm
-                    end_min = eh * 60 + em
-                    if end_min < start_min:
-                        end_min += 24 * 60
-                    total_hours += (end_min - start_min) / 60.0
+                records = extract_normalized_diligence_records(content)
+                total_hours = round(sum(record["hours"] for record in records), 2)
+                if not records:
+                    continue
 
                 key = f"{year}-{month}"
                 monthly_data[key] = {
                     "year": int(year),
                     "month": int(month),
-                    "hours": round(total_hours, 2),
+                    "hours": total_hours,
                     "target": DILIGENCE_TARGET_HOURS,
                     "delta": round(total_hours - DILIGENCE_TARGET_HOURS, 2),
-                    "entries": len(matches)
+                    "entries": len(records)
                 }
             except Exception as e:
                 logger.warning(f"解析勤奋时间失败: {report_file.name}, {e}")
