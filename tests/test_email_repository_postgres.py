@@ -118,15 +118,15 @@ class EmailRepositoryPostgresSqlTest(unittest.TestCase):
 
         record_id = repo.save_email(
             email_date=date(2026, 2, 3),
-            content="[勤奋时间][17:45][19:30]",
+            content="[勤奋时间][18:10][19:30]",
         )
 
         self.assertEqual(record_id, 7)
         insert_sql, insert_params = cursor.executed[1]
         self.assertIn("INSERT INTO emails", insert_sql)
-        self.assertEqual(insert_params[5:8], ("17:45", "19:15", 1.5))
+        self.assertEqual(insert_params[5:8], ("18:10", "19:10", 1.0))
 
-    def test_save_email_uses_actual_weekend_start_time(self):
+    def test_save_email_uses_start_time_even_on_weekend(self):
         cursor = _FakeCursor(fetchone_results=[None, {"id": 9}])
         repo = self._load_repo(cursor)
 
@@ -146,7 +146,7 @@ class EmailRepositoryPostgresSqlTest(unittest.TestCase):
                     {
                         "id": 10,
                         "email_date": date(2026, 2, 3),
-                        "content": "[勤奋时间][17:45][19:30]",
+                        "content": "[勤奋时间][18:10][19:30]",
                     },
                     {
                         "id": 11,
@@ -171,7 +171,7 @@ class EmailRepositoryPostgresSqlTest(unittest.TestCase):
         first_update_sql, first_update_params = cursor.executed[1]
         second_update_sql, second_update_params = cursor.executed[2]
         self.assertIn("UPDATE emails", first_update_sql)
-        self.assertEqual(first_update_params, ("17:45", "19:15", 1.5, 10))
+        self.assertEqual(first_update_params, ("18:10", "19:10", 1.0, 10))
         self.assertEqual(second_update_params, (None, None, 0, 11))
 
 

@@ -195,7 +195,7 @@ class DashboardReportContractTest(unittest.TestCase):
                     [
                         "### 2026年02月06日 (星期五)",
                         "",
-                        "[勤奋时间][17:45][19:30]",
+                        "[勤奋时间][18:10][19:30]",
                         "",
                         "### 2026年02月07日 (星期六)",
                         "",
@@ -211,10 +211,10 @@ class DashboardReportContractTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["source"], "file")
-        self.assertEqual(payload["years"]["2026"]["months"][0]["hours"], 1.5)
+        self.assertEqual(payload["years"]["2026"]["months"][0]["hours"], 1.0)
         self.assertEqual(payload["years"]["2026"]["months"][0]["entries"], 1)
 
-    def test_api_diligence_file_fallback_applies_weekend_variable_start_rule(self):
+    def test_api_diligence_file_fallback_also_uses_start_time_on_weekend(self):
         app_module = _load_app_module()
         app_module._db_available = False
 

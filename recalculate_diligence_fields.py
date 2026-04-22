@@ -39,7 +39,7 @@ def main(argv=None) -> int:
         end_date=args.end_date,
     )
 
-    print("已按 17:45 起算、0.5 小时档位向下取整规则重算勤奋时长。")
+    print("已按邮件开始时间起算、0.5 小时档位向下取整规则重算勤奋时长。")
     print("注意：.process_cache.json 和 fetch_cache 不缓存仪表盘结果；如果只改了 content，需要执行这一步让派生字段同步。")
     print(
         f"共扫描 {stats['scanned']} 条记录，更新 {stats['updated']} 条记录。"

@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 import re
-from datetime import date as date_type, datetime
 from typing import Optional
 
 DILIGENCE_PATTERN = re.compile(r"\[勤奋时间\]\[(\d{1,2}:\d{2})\]\[(\d{1,2}:\d{2})\]")
-REPORT_SECTION_PATTERN = re.compile(r"^###\s+(\d{4})年(\d{2})月(\d{2})日.*$", re.MULTILINE)
-BASE_START_TIME = "17:45"
-BASE_START_MINUTES = 17 * 60 + 45
 HALF_HOUR_MINUTES = 30
 
 
@@ -45,31 +41,15 @@ def empty_diligence_result() -> dict:
         "minutes": 0,
     }
 
-
-def _coerce_date(value) -> Optional[date_type]:
-    """Coerce a date/datetime value into a date."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date_type):
-        return value
-    return None
-
-
-def is_weekend(work_date=None) -> bool:
-    """Return True when work_date falls on Saturday/Sunday."""
-    normalized_date = _coerce_date(work_date)
-    return bool(normalized_date and normalized_date.weekday() >= 5)
-
-
 def normalize_diligence_window(start_time: str, end_time: str, work_date=None) -> dict:
     """
-    Normalize diligence time against the correct baseline.
+    Normalize diligence time against the email's recorded start time.
 
     Credited time is counted in 30-minute slots only, rounding the end time
-    down to the last reachable slot from the applicable baseline.
-    Weekdays use a fixed 17:45 baseline; weekends use the actual start time.
+    down to the last reachable slot from the recorded start time.
+
+    The optional work_date argument is kept for compatibility with older call
+    sites, but no longer changes the normalization rule.
     """
     start_minutes = parse_time(start_time)
     end_minutes = parse_time(end_time)
@@ -79,9 +59,7 @@ def normalize_diligence_window(start_time: str, end_time: str, work_date=None) -
     if end_minutes < start_minutes:
         end_minutes += 24 * 60
 
-    baseline_minutes = start_minutes if is_weekend(work_date) else BASE_START_MINUTES
-    baseline_label = format_time(baseline_minutes) if is_weekend(work_date) else BASE_START_TIME
-
+    baseline_minutes = start_minutes
     elapsed_from_baseline = end_minutes - baseline_minutes
     if elapsed_from_baseline < HALF_HOUR_MINUTES:
         return empty_diligence_result()
@@ -90,7 +68,7 @@ def normalize_diligence_window(start_time: str, end_time: str, work_date=None) -
     effective_end_minutes = baseline_minutes + credited_minutes
 
     return {
-        "start": baseline_label,
+        "start": format_time(start_minutes),
         "end": format_time(effective_end_minutes),
         "hours": round(credited_minutes / 60.0, 2),
         "minutes": int(credited_minutes),
@@ -139,23 +117,7 @@ def sum_diligence_hours(content: str, work_date=None) -> float:
 
 def extract_report_diligence_records(report_content: str) -> list[dict]:
     """Extract normalized diligence records from a generated monthly report."""
-    content = report_content or ""
-    matches = list(REPORT_SECTION_PATTERN.finditer(content))
-    if not matches:
-        return extract_normalized_diligence_records(content)
-
-    records: list[dict] = []
-    for idx, match in enumerate(matches):
-        section_start = match.end()
-        section_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(content)
-        work_date = date_type(
-            int(match.group(1)),
-            int(match.group(2)),
-            int(match.group(3)),
-        )
-        section_content = content[section_start:section_end]
-        records.extend(extract_normalized_diligence_records(section_content, work_date=work_date))
-    return records
+    return extract_normalized_diligence_records(report_content or "")
 
 
 def sum_report_diligence_hours(report_content: str) -> float:
