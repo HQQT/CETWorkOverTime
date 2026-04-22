@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from collections import defaultdict
 
-from diligence_time import sum_diligence_hours
+from diligence_time import sum_report_diligence_hours
 
 def extract_year_month(filename):
     """Extract year and month from filename like '2024年07月工作总结.md'"""
@@ -30,7 +30,7 @@ for filename in os.listdir(output_dir):
             content = f.read()
 
         # Find all diligence time entries
-        month_hours = sum_diligence_hours(content)
+        month_hours = sum_report_diligence_hours(content)
         if month_hours <= 0:
             continue
 

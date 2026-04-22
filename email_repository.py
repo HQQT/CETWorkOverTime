@@ -28,7 +28,7 @@ def _month_date_range(year: int, month: int) -> tuple[date, date]:
 
 # ==================== 勤奋时间解析工具 ====================
 
-def _parse_diligence_time(content: str) -> dict:
+def _parse_diligence_time(content: str, work_date=None) -> dict:
     """
     从邮件正文中提取勤奋时间
 
@@ -38,7 +38,7 @@ def _parse_diligence_time(content: str) -> dict:
     Returns:
         {'start': 'HH:MM', 'end': 'HH:MM', 'hours': float} 或空字典
     """
-    return extract_last_diligence_record(content)
+    return extract_last_diligence_record(content, work_date=work_date)
 
 
 # ==================== 邮件 CRUD ====================
@@ -61,7 +61,7 @@ def save_email(email_date: date,
         记录 ID，跳过则返回 None
     """
     table = _table_name_for_date(email_date)
-    diligence = _parse_diligence_time(content)
+    diligence = _parse_diligence_time(content, work_date=email_date)
     d_start = diligence.get('start')
     d_end = diligence.get('end')
     d_hours = diligence.get('hours', 0)
@@ -327,7 +327,10 @@ def recalculate_diligence_fields(
 
             updated = 0
             for row in rows:
-                diligence = _parse_diligence_time(row.get("content") or "")
+                diligence = _parse_diligence_time(
+                    row.get("content") or "",
+                    work_date=row.get("email_date"),
+                )
                 cur.execute(
                     f"""
                     UPDATE {table}

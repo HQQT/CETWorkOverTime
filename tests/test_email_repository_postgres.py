@@ -126,6 +126,19 @@ class EmailRepositoryPostgresSqlTest(unittest.TestCase):
         self.assertIn("INSERT INTO emails", insert_sql)
         self.assertEqual(insert_params[5:8], ("17:45", "19:15", 1.5))
 
+    def test_save_email_uses_actual_weekend_start_time(self):
+        cursor = _FakeCursor(fetchone_results=[None, {"id": 9}])
+        repo = self._load_repo(cursor)
+
+        record_id = repo.save_email(
+            email_date=date(2026, 2, 7),
+            content="[勤奋时间][09:10][12:00]",
+        )
+
+        self.assertEqual(record_id, 9)
+        _, insert_params = cursor.executed[1]
+        self.assertEqual(insert_params[5:8], ("09:10", "11:40", 2.5))
+
     def test_recalculate_diligence_fields_updates_derived_columns_from_content(self):
         cursor = _FakeCursor(
             fetchall_results=[

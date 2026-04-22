@@ -20,7 +20,7 @@ except ImportError:
     pyotp = None
 
 import config
-from diligence_time import extract_normalized_diligence_records
+from diligence_time import extract_report_diligence_records
 from email_fetcher import EmailFetcher
 from email_processor import EmailProcessor
 
@@ -369,7 +369,7 @@ def api_diligence():
 
             try:
                 content = report_file.read_text(encoding="utf-8")
-                records = extract_normalized_diligence_records(content)
+                records = extract_report_diligence_records(content)
                 total_hours = round(sum(record["hours"] for record in records), 2)
                 if not records:
                     continue

@@ -264,10 +264,13 @@ class EmailProcessor:
                 duplicate_count += len(emails) - 1
 
                 # 找出勤奋时间最长的邮件
-                best_email = max(emails, key=lambda e: sum_diligence_minutes(e.content))
+                best_email = max(
+                    emails,
+                    key=lambda e: sum_diligence_minutes(e.content, work_date=e.date),
+                )
                 
                 # 如果都没有勤奋时间，退化为保留内容最长的
-                if sum_diligence_minutes(best_email.content) == 0:
+                if sum_diligence_minutes(best_email.content, work_date=best_email.date) == 0:
                      best_email = max(emails, key=lambda e: len(e.content))
 
                 # 更新文件名为合并样式，以便知道来源（可选，或者保持原名）

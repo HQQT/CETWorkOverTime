@@ -193,8 +193,13 @@ class DashboardReportContractTest(unittest.TestCase):
             (report_dir / "2026年02月工作总结.md").write_text(
                 "\n".join(
                     [
-                        "[勤奋时间][17:45][18:10]",
+                        "### 2026年02月06日 (星期五)",
+                        "",
                         "[勤奋时间][17:45][19:30]",
+                        "",
+                        "### 2026年02月07日 (星期六)",
+                        "",
+                        "[勤奋时间][09:10][09:20]",
                     ]
                 ),
                 encoding="utf-8",
@@ -207,6 +212,31 @@ class DashboardReportContractTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["source"], "file")
         self.assertEqual(payload["years"]["2026"]["months"][0]["hours"], 1.5)
+        self.assertEqual(payload["years"]["2026"]["months"][0]["entries"], 1)
+
+    def test_api_diligence_file_fallback_applies_weekend_variable_start_rule(self):
+        app_module = _load_app_module()
+        app_module._db_available = False
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            report_dir = Path(tmpdir)
+            (report_dir / "2026年02月工作总结.md").write_text(
+                "\n".join(
+                    [
+                        "### 2026年02月07日 (星期六)",
+                        "",
+                        "[勤奋时间][09:10][12:00]",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            app_module.config.OUTPUT_DIR = report_dir
+
+            response = app_module.api_diligence()
+            payload = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["years"]["2026"]["months"][0]["hours"], 2.5)
         self.assertEqual(payload["years"]["2026"]["months"][0]["entries"], 1)
 
     def test_api_reports_download_returns_zip_for_selected_reports(self):

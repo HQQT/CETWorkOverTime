@@ -10,7 +10,7 @@ from datetime import datetime
 from collections import defaultdict
 
 import config
-from diligence_time import sum_diligence_hours
+from diligence_time import sum_diligence_hours, sum_report_diligence_hours
 from email_parser import EmailData
 from date_utils import DateUtils
 
@@ -107,7 +107,7 @@ class ReportGenerator:
         计算单封邮件中的勤奋时间总时长
         """
         try:
-            return sum_diligence_hours(email.content)
+            return sum_diligence_hours(email.content, work_date=email.date)
         except Exception:
             return 0.0
     
@@ -310,7 +310,7 @@ class ReportGenerator:
                         content = f.read()
 
                     # 查找所有勤奋时间条目
-                    month_hours = sum_diligence_hours(content)
+                    month_hours = sum_report_diligence_hours(content)
                     if month_hours <= 0:
                         continue
 
