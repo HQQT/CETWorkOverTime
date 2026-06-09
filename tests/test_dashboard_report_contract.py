@@ -2,6 +2,7 @@ import importlib
 import io
 import json
 import logging
+import os
 import sys
 import tempfile
 import threading
@@ -27,6 +28,7 @@ class _FakeRequest:
         self.endpoint = None
         self.path = "/"
         self.args = {}
+        self.headers = {}
         self._json = {}
 
     def get_json(self, silent=False):
@@ -238,6 +240,54 @@ class DashboardReportContractTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["years"]["2026"]["months"][0]["hours"], 2.5)
         self.assertEqual(payload["years"]["2026"]["months"][0]["entries"], 1)
+
+    def test_external_diligence_is_disabled_without_configured_token(self):
+        app_module = _load_app_module()
+
+        with patch.dict(os.environ, {}, clear=True):
+            response, status_code = app_module.api_external_diligence()
+            payload = response.get_json()
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(payload["ok"])
+        self.assertIn("未启用", payload["error"])
+
+    def test_external_diligence_requires_bearer_token(self):
+        app_module = _load_app_module()
+        app_module.request.headers = {}
+
+        with patch.dict(os.environ, {"EXTERNAL_API_TOKEN": "secret-token"}, clear=True):
+            response, status_code = app_module.api_external_diligence()
+            payload = response.get_json()
+
+        self.assertEqual(status_code, 401)
+        self.assertFalse(payload["ok"])
+        self.assertIn("Bearer Token", payload["error"])
+
+    def test_external_diligence_rejects_invalid_token(self):
+        app_module = _load_app_module()
+        app_module.request.headers = {"Authorization": "Bearer wrong-token"}
+
+        with patch.dict(os.environ, {"EXTERNAL_API_TOKEN": "secret-token"}, clear=True):
+            response, status_code = app_module.api_external_diligence()
+            payload = response.get_json()
+
+        self.assertEqual(status_code, 403)
+        self.assertFalse(payload["ok"])
+        self.assertIn("Token 无效", payload["error"])
+
+    def test_external_diligence_returns_current_data_with_valid_token(self):
+        app_module = _load_app_module()
+        app_module.request.headers = {"Authorization": "Bearer secret-token"}
+
+        with patch.dict(os.environ, {"EXTERNAL_API_TOKEN": "secret-token"}, clear=True):
+            response = app_module.api_external_diligence()
+            payload = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["source"], "database")
+        self.assertEqual(payload["years"]["2026"]["months"][0]["hours"], 180.5)
 
     def test_api_reports_download_returns_zip_for_selected_reports(self):
         app_module = _load_app_module()

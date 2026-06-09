@@ -93,6 +93,10 @@ IMAP_SEARCH_DAYS=365
 TOTP_SECRET=YOUR_32_CHAR_BASE32_SECRET
 SECRET_KEY=replace_with_a_long_random_secret
 
+# ======== 外部只读 API ========
+# 配置后可通过 Authorization: Bearer <token> 读取勤奋时间统计
+EXTERNAL_API_TOKEN=replace_with_a_long_random_token
+
 # ======== PostgreSQL 配置 ========
 # Docker Compose 默认使用 postgres；本地部署通常改为 localhost
 DB_HOST=postgres
@@ -100,6 +104,36 @@ DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=your_db_password
 DB_NAME=cetworkovertime
+```
+
+## 🔌 外部只读 API
+
+配置 `EXTERNAL_API_TOKEN` 后，外部应用可以通过固定 Bearer Token 读取勤奋时间统计：
+
+```bash
+curl \
+  -H "Authorization: Bearer $EXTERNAL_API_TOKEN" \
+  http://127.0.0.1:15000/api/external/diligence
+```
+
+Docker Compose 当前将容器 `5000` 端口映射到宿主机 `15000`：
+
+```yaml
+ports:
+  - "15000:5000"
+```
+
+因此宿主机上的其他应用可以直接访问 `http://127.0.0.1:15000`，不需要走域名解析。如果希望该端口只允许宿主机本机访问，可改为：
+
+```yaml
+ports:
+  - "127.0.0.1:15000:5000"
+```
+
+如果调用方也是同一 Docker 网络 `app_shared_net` 中的容器，可以直接访问容器服务名：
+
+```text
+http://cetworkovertime:5000/api/external/diligence
 ```
 
 ## 📁 主要目录与代码结构

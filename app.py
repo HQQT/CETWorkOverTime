@@ -8,6 +8,7 @@ import sys
 import io
 import re
 import zipfile
+import hmac
 import logging
 import threading
 from pathlib import Path
@@ -48,8 +49,8 @@ app.secret_key = config.SECRET_KEY
 
 @app.before_request
 def check_login():
-    # 白名单路由：登录页、登录API、静态文件
-    allowed_routes = ['login_page', 'api_login', 'static']
+    # 白名单路由：登录页、登录API、外部 Token API、静态文件
+    allowed_routes = ['login_page', 'api_login', 'api_external_diligence', 'static']
     if request.endpoint not in allowed_routes:
         if not session.get('logged_in'):
             if request.path.startswith('/api/'):
@@ -329,9 +330,8 @@ def api_logout():
 DILIGENCE_TARGET_HOURS = float(os.environ.get("DILIGENCE_TARGET_HOURS", "36"))
 
 
-@app.route("/api/diligence")
-def api_diligence():
-    """获取勤奋时间统计数据，按年/月组织（优先从数据库）"""
+def _build_diligence_payload() -> dict:
+    """获取勤奋时间统计数据，按年/月组织（优先从数据库）。"""
     # 优先从数据库读取
     if _db_available:
         try:
@@ -343,12 +343,12 @@ def api_diligence():
                     if stats['months']:
                         years_data[str(year)] = stats
                 if years_data:
-                    return jsonify({
+                    return {
                         "ok": True,
                         "source": "database",
                         "target_hours": DILIGENCE_TARGET_HOURS,
                         "years": years_data
-                    })
+                    }
         except Exception as e:
             logger.warning(f"从数据库读取勤奋时间失败，回退到文件: {e}")
 
@@ -407,12 +407,36 @@ def api_diligence():
         yd["total_hours"] = round(yd["total_hours"], 2)
         yd["total_delta"] = round(yd["total_hours"] - yd["total_target"], 2)
 
-    return jsonify({
+    return {
         "ok": True,
         "source": "file",
         "target_hours": DILIGENCE_TARGET_HOURS,
         "years": years_data
-    })
+    }
+
+
+@app.route("/api/diligence")
+def api_diligence():
+    return jsonify(_build_diligence_payload())
+
+
+@app.route("/api/external/diligence")
+def api_external_diligence():
+    """通过固定 Bearer Token 暴露给外部应用的只读勤奋时间接口。"""
+    expected_token = os.environ.get("EXTERNAL_API_TOKEN", "").strip()
+    if not expected_token:
+        return jsonify({"ok": False, "error": "外部接口未启用，请配置 EXTERNAL_API_TOKEN"}), 503
+
+    authorization = request.headers.get("Authorization", "")
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        return jsonify({"ok": False, "error": "缺少 Bearer Token"}), 401
+
+    supplied_token = authorization[len(prefix):].strip()
+    if not hmac.compare_digest(supplied_token, expected_token):
+        return jsonify({"ok": False, "error": "Token 无效"}), 403
+
+    return jsonify(_build_diligence_payload())
 
 
 @app.route("/api/diligence/<int:year>/<int:month>")
